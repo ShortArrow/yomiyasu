@@ -49,7 +49,7 @@ _EDGE = "、,.:;・-…=/\\"
 
 TEXT_SUFFIXES = (".md", ".py", ".json", ".jsonl", ".txt", ".csv", ".toml", ".yaml", ".yml", ".html", ".js")
 DOC_TOPS = ("skills/yomiyasu/SKILL.md", "references/", "skills/yomiyasu/references/", "README.md", "CHANGELOG.md",
-            "articles/", "evals/")
+            "docs/", "articles/", "evals/")
 CODE_TOPS = ("tests/", "scripts/", "skills/yomiyasu/scripts/")
 
 
