@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/yomiyasu_logo.png" alt="yomiyasu logo" width="700">
+  <img src="./assets/yomiyasu_logo.webp" alt="yomiyasu v2.0.0 logo" width="700">
 </p>
 
 # yomiyasu（よみやす）
