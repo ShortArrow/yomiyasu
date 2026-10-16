@@ -376,8 +376,15 @@ class TestFinalCheckCases(unittest.TestCase):
 class TestOutputShape(unittest.TestCase):
     def test_existing_keys_are_kept_and_type_changes_is_added(self):
         result = yomiyasu_diff.diff("資料を共有してください。\n", "資料を共有します。\n")
-        self.assertEqual(list(result), ["markers", "new_words", "lost_words", "structure", "spans", "logic", "bold",
-                                        "endings", "type_changes"])
+        # v2.0.0 の形式2（設計 2.8）。v1.1.2 の9キーは名前と間の順を保ち、前後に新しいキーが付く
+        # G7（種類と読者の設計 9.4）: not_judged の次に context
+        # diff の詰め: full_diff のあとに文体の硬化の検査（stiffness）と勢いの検査（tone）
+        # diff の詰めの直し（反証で見つけた例）: 気持ちの語の一覧の出どころ（feeling）
+        self.assertEqual(list(result), ["format", "format_version", "tool_version", "status", "changed",
+                                        "candidate_count", "meaning_risk_count", "fail_on_meaning_risk_count",
+                                        "not_judged", "context", "meaning_risks",
+                                        "markers", "new_words", "lost_words", "structure", "spans", "logic", "bold",
+                                        "endings", "type_changes", "full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness", "register"])
         self.assertEqual(set(result["type_changes"][0]), {"orig", "rewrite", "lost", "added"})
 
     def test_report_has_the_new_heading_only_when_needed(self):
