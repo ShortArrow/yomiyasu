@@ -101,7 +101,7 @@ The scripts only report items to review and the places that changed. They do not
 
 The checks catch fixed patterns only. Places without any item still need to be read against the original.
 
-The rewriting was checked with Claude Code and Codex on macOS through their non-interactive commands (`claude -p` and `codex exec`). Rewriting has not been tested in the interactive interfaces, in installs through the plugin, skills CLI or openskills, in Codex Cloud, in Cursor, with the Claude.ai ZIP upload, or on Windows. For 2.0.2, installing through the Claude Code plugin, skills CLI, GitHub CLI and openskills was checked from a local copy of the repository, up to the point where the skill is loaded. Installing from GitHub has not been tried yet. [docs/limitations.md](./docs/limitations.md) (Japanese) lists what the checks miss and what was measured.
+The rewriting was checked with Claude Code and Codex on macOS through their non-interactive commands (`claude -p` and `codex exec`). Rewriting has not been tested in the interactive interfaces, in installs through the Claude Code plugin, skills CLI, GitHub CLI or openskills, in Codex Cloud, in Cursor, with the Claude.ai ZIP upload, or on Windows. After the 2.0.2 release, installing from nanaism/yomiyasu on GitHub through the Claude Code plugin, skills CLI (`npx skills add`), GitHub CLI (`gh skill install`) and openskills (`npx openskills install`) was checked up to the point where Claude Code or Codex loads the skill (for openskills, up to reading it with `npx openskills read yomiyasu`). [docs/limitations.md](./docs/limitations.md) (Japanese) lists what the checks miss and what was measured.
 
 ## License
 

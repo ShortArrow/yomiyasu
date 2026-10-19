@@ -94,10 +94,15 @@ Codex（codex-cli 0.162.1、gpt-6-astra、effort high、fast）では、作業�
 - 試験一式は Python 3.14.5 で1,778件（subtest 6,641件）、3.9.6 で1,778件が通りました。
 - 入れ方は macOS で確かめました。設定を分けた空の場所に、手元のリポジトリの写しから入れています。Claude Code 2.1.296 のプラグイン（`claude plugin marketplace add` と `claude plugin install`）ではプラグインのスキルが1つ読み込まれました。skills CLI 1.7.2、gh 2.100.0 の `gh skill install --from-local`、openskills 1.5.0 でもスキルが入りました。codex-cli 0.162.1 で `.agents/skills/yomiyasu/` に置いたスキルが `yomiyasu:yomiyasu` の名前でモデルに渡る一覧に載ることも、`codex debug prompt-input` で確かめました。
 - 登録用の ZIP を作り、35個のファイルが入り、`.codex-plugin` と `.claude-plugin` が入らないことと、展開した中身で lint、diff、check が動くことを確かめました。
+- 公開したあと、GitHub の nanaism/yomiyasu からも入れて確かめました。
+  - Claude Code のプラグイン（`claude plugin marketplace add nanaism/yomiyasu` と `claude plugin install yomiyasu@yomiyasu`）、`npx skills add nanaism/yomiyasu`、`gh skill install nanaism/yomiyasu yomiyasu`、`npx openskills install nanaism/yomiyasu` のどれでも 2.0.2 のスキルが入りました。
+  - Claude Code は、プラグイン、`npx skills add`、`gh skill install` のどれで入れたスキルも読み込みました。`npx skills add` は、既定のシンボリックリンクで置く形と `--copy` で写す形の両方で試しました。
+  - openskills では `AGENTS.md` に yomiyasu の項目が書かれ、`npx openskills read yomiyasu` で 2.0.2 のスキルを読めました。
+  - Codex は、`npx skills add` と `gh skill install` で入れたスキルと、README の手順で `.agents/skills/` に写したスキルを、`yomiyasu:yomiyasu` の名前でモデルに渡る一覧に載せました。
+  - リリースの `yomiyasu.zip` をダウンロードすると、上で作った登録用の ZIP と同じものでした（sha256 が一致）。
 
 ### 限界
 
-- GitHub の nanaism/yomiyasu から入れる形（`/plugin marketplace add nanaism/yomiyasu`、`npx skills add nanaism/yomiyasu` など）は、手元のリポジトリの写しから入れて確かめただけです。
 - 選ばれ方は対話を使わないコマンド（`claude -p` と `codex exec`）でだけ測りました。対話の画面、`~/.claude/CLAUDE.md` と `~/.codex/AGENTS.md` に1行を書く形、Claude.ai の指示に書く形、Cursor では、選ばれ方も1行が効くかも確かめていません。
 - `~user/...` の形はホームフォルダに置き換えません。`~\` で始まる値を置き換えることは、Windows のパスをまねた試験で確かめただけで、実機では動かしていません。
 - 太字のすぐあとに URL が続く崩れを含む段落では、lint が 2.0.1 より13〜17%遅くなることがあります。URL が続く崩れを3組か4組ずつ含む段落と、直せる崩れ2組と URL が続く崩れ2組を含む段落を並べた合成の文書で測りました（同じプロセスで lint を動かした CPU 時間。URL が続く崩れを3組ずつ含む段落を2,000並べた19万字の文書では0.47秒が0.55秒）。直し方の案を元の解析から決めるための表を作っても、URL が続く組では表から案を決められず、段落全体を解析し直すためです。直せる崩れを2組か3組ずつ含む段落と、URL が続く崩れが2組だけの段落では、差は5%未満でした。

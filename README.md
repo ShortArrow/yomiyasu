@@ -461,7 +461,7 @@ Claude Code か Codex の設定に貼ったときだけ動く補助のスクリ�
 
 付属の検査は決まった形を拾うだけです。候補が出なかった所も元の文と読み比べて確かめてください。
 
-推敲の動作は対話の画面を使わないコマンド（`claude -p` と `codex exec`）で macOS の Claude Code と Codex を動かして確かめました。対話の画面、プラグイン・skills CLI・openskills で入れた環境、Codex Cloud、Cursor、Claude.ai へのZIPの登録、Windows での動作は確かめていません。2.0.2 では手元のリポジトリの写しを使って、Claude Code のプラグイン、skills CLI、GitHub CLI、openskills で入れられることと、入れたスキルが読み込まれることを確かめました。GitHub から入れる形はまだ試していません。
+推敲の動作は対話の画面を使わないコマンド（`claude -p` と `codex exec`）で macOS の Claude Code と Codex を動かして確かめました。対話の画面、Claude Code のプラグイン・`npx skills add`・`gh skill install`・`npx openskills install` で入れた環境、Codex Cloud、Cursor、Claude.ai へのZIPの登録、Windows での動作は確かめていません。2.0.2 を公開したあとに、GitHub の nanaism/yomiyasu からこの4つの入れ方で入れ、Claude Code と Codex がスキルを読み込むところまでを確かめました（openskills は `npx openskills read yomiyasu` で読めるところまで）。
 
 検査で拾えない形、正しい推敲にも候補が出る形、測った結果は [docs/limitations.md](./docs/limitations.md) にまとめています。
 
