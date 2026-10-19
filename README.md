@@ -17,10 +17,6 @@
 
 Claude Code、Codex、CursorをはじめとするAIコーディング環境に読み込ませて使用してください。
 
-2.0.0 では推敲した文章を返す前に、数値や否定が変わっていないかを yomiyasu 自身が検査するようになりました。書き手と読み手の関係に合わせた敬語の直しと、会話や資料にある事実の補いも加わっています（[2.0.0 で加わったこと](#200-で加わったこと)）。
-
-2.0.2 から、yomiyasu は「この文章を yomiyasu で読みやすくして」のように名前を出して頼んだときだけ使われます。毎回使いたいときに指示のファイルへ足す1行は、「[毎回 yomiyasu を使いたいとき](#毎回-yomiyasu-を使いたいとき)」にあります。
-
 開発の背景、AI生成文の読みにくさ、コーパスを使った検証については、次の解説記事で紹介しています。
 
 - [AI-Slopな日本語を構造レベルで読みやすくするSkill『yomiyasu（よみやす）』を作りました（Zenn）](https://zenn.dev/algoartis/articles/0b1c731881b25c)
@@ -172,7 +168,7 @@ npx skills update yomiyasu
 
 Claude Codeなどのエージェントの設定ディレクトリへ、スキルをインストール・更新します。スキル定義は `skills/yomiyasu/SKILL.md` の1か所に配置しています。
 
-### 2. GitHub CLI
+### 2. `gh skill install`
 
 GitHub CLIの `gh skill` コマンドからインストールできます。
 
