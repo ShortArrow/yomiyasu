@@ -57,7 +57,7 @@ mkdir -p .agents/skills
 cp -R /tmp/yomiyasu/skills/yomiyasu .agents/skills/yomiyasu
 ```
 
-Codex then lists the skill as `yomiyasu:yomiyasu`. Call it with `$yomiyasu:yomiyasu`, by sending only `/yomiyasu`, or by writing 「yomiyasu で」 ("with yomiyasu") in the request. The copied folder is not updated automatically; copy it again to update.
+Codex then lists the skill as `yomiyasu:yomiyasu`. Call it by sending only `/yomiyasu` or by writing 「yomiyasu で」 ("with yomiyasu") in the request. Writing the listed name, `$yomiyasu:yomiyasu`, also works. The copied folder is not updated automatically; copy it again to update.
 
 ## Usage
 

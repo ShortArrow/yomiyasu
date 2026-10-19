@@ -12,13 +12,13 @@ yomiyasu のバージョンごとの変更を書きます。1.1.2 以前の変�
 
 yomiyasu が使われるのは「/yomiyasu」と送ったとき、「この文章を yomiyasu で推敲して」のように依頼の文に名前を書いたとき、「日本語を推敲するスキルを使って」のようにスキルでの推敲をはっきり頼んだときです。名前を出さずに日本語の文章を書かせる作業や、コード、設定、ドキュメントを直す作業では使われません。2.0.1 までは「この文章を読みやすくして」のような名前のない依頼でも使われていましたが、2.0.2 からはこうした依頼にも名前が要ります。
 
-これまでのように、AI が書いたり直したりする日本語をいつも yomiyasu に通したい場合は、指示のファイルに次の1行を足してください。Claude Code ではプロジェクトの `CLAUDE.md` か `~/.claude/CLAUDE.md` に書きます。Codex ではリポジトリの `AGENTS.md` か `~/.codex/AGENTS.md` に同じ1行を書きます。
+これまでのように、AI が書いたり直したりする日本語をいつも yomiyasu に通したい場合は、指示のファイルに次の1行を足してください。Claude Code ではプロジェクトの `CLAUDE.md` か `~/.claude/CLAUDE.md` に書きます。Codex ではリポジトリの `AGENTS.md` か `~/.codex/AGENTS.md` に書きます。
 
 ```text
-記事、ドキュメント、PR の説明文、コミットメッセージなどの日本語の文章を書いたり直したりするときは、常に yomiyasu:yomiyasu スキルで推敲してください。コードを直したあとの作業の報告には使わなくてかまいません。
+記事、ドキュメント、PR の説明文、コミットメッセージなどの日本語の文章を書いたり直したりするときは、常に yomiyasu スキルで推敲してください。コードを直したあとの作業の報告には使わなくてかまいません。
 ```
 
-1行の中のスキルの名前は入れ方に合わせてください。`yomiyasu:yomiyasu` のまま書くのは、Claude Code にプラグインで入れた場合、Codex に `npx skills add` か `gh skill install` で入れた場合、Codex で使うリポジトリの `.agents/skills/` に置いた場合です。Claude Code に `npx skills add`、`gh skill install`、`npx openskills install` でスキルとして入れた場合は、`yomiyasu:yomiyasu` を `yomiyasu` に変えて `CLAUDE.md` に書きます。
+1行の中のスキルの名前は入れ方に合わせてください。`yomiyasu` のまま書くのは、Claude Code に `npx skills add`、`gh skill install`、`npx openskills install` でスキルとして入れた場合です。Claude Code にプラグインで入れた場合、Codex に `npx skills add` か `gh skill install` で入れた場合、Codex で使うリポジトリの `.agents/skills/` に置いた場合は、`yomiyasu` を `yomiyasu:yomiyasu` に書き換えてください。
 
 openskills で入れたスキルを `AGENTS.md` から読むエージェントでも、スキルの名前は `yomiyasu` です。README にある `npx openskills read yomiyasu` を添えた1行を、`AGENTS.md` の `<skills_system>` の外に書いてください。2.0.2 に更新したら、`npx openskills update yomiyasu` のあとに `npx openskills sync` も実行してください。sync するまで `AGENTS.md` のスキルの description は 2.0.1 のままです。
 

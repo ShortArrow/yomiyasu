@@ -237,7 +237,7 @@ mkdir -p .agents/skills
 cp -R /tmp/yomiyasu/skills/yomiyasu .agents/skills/yomiyasu
 ```
 
-この置き方では Codex がスキルを `yomiyasu:yomiyasu` という名前で一覧に載せます。`$yomiyasu:yomiyasu` と書くか、「/yomiyasu」とだけ送るか、依頼の文に「yomiyasu で」と書いて呼んでください。コピーしたフォルダは自動では新しくなりません。最新にするには、同じ手順でコピーし直してください。
+この置き方では Codex がスキルを `yomiyasu:yomiyasu` という名前で一覧に載せます。呼ぶときは「/yomiyasu」とだけ送るか、依頼の文に「yomiyasu で」と書いてください。一覧の名前どおり `$yomiyasu:yomiyasu` と書いても呼べます。コピーしたフォルダは自動では新しくなりません。最新にするには、同じ手順でコピーし直してください。
 
 ### 他の日本語校正スキルとの干渉について
 
@@ -258,29 +258,25 @@ AIチャットやコーディングエージェントに下書きを貼り付け
 
 ### 毎回 yomiyasu を使いたいとき
 
-AI が書いたり直したりする日本語をいつも yomiyasu に通したいときは、エージェントが毎回読む指示のファイルに、入れ方ごとに下に示す1行を足してください。1行に書くスキルの名前は入れ方によって `yomiyasu:yomiyasu` と `yomiyasu` に分かれます。
+AI が書いたり直したりする日本語をいつも yomiyasu に通したいときは、エージェントが毎回読む指示のファイルに、入れ方ごとに下に示す1行を足してください。1行に書くスキルの名前は入れ方によって `yomiyasu` と `yomiyasu:yomiyasu` に分かれます。
 
 #### Claude Code
 
-プラグインで入れた場合は、スキルの名前が `yomiyasu:yomiyasu` になるので、次の1行を書きます。
-
-```text
-記事、ドキュメント、PR の説明文、コミットメッセージなどの日本語の文章を書いたり直したりするときは、常に yomiyasu:yomiyasu スキルで推敲してください。コードを直したあとの作業の報告には使わなくてかまいません。
-```
-
-`npx skills add` や `gh skill install` でスキルとして入れた場合は、名前が `yomiyasu` なので、次の1行を書きます。
+`npx skills add` や `gh skill install` でスキルとして入れた場合は、スキルの名前が `yomiyasu` なので、次の1行を書きます。
 
 ```text
 記事、ドキュメント、PR の説明文、コミットメッセージなどの日本語の文章を書いたり直したりするときは、常に yomiyasu スキルで推敲してください。コードを直したあとの作業の報告には使わなくてかまいません。
 ```
 
+プラグインで入れた場合は、スキルの名前が `yomiyasu:yomiyasu` になるので、1行の中の `yomiyasu` を `yomiyasu:yomiyasu` に書き換えてください。
+
 1つのリポジトリだけで使うならそのリポジトリの直下の `CLAUDE.md` に、すべてのリポジトリで使うなら `~/.claude/CLAUDE.md` に書きます。書いたあとに始めた会話から有効になります。
 
-この1行があると、名前を出さずに記事や PR の説明文、コミットメッセージ、翻訳を書かせたときも、エージェントは yomiyasu で推敲します。コードを直したあとの作業の報告まで推敲させたいときは、「日本語の文章を書いたり直したりするときは、常に yomiyasu:yomiyasu スキルで推敲してください。」とだけ書きます。スキルとして入れた場合は、`yomiyasu:yomiyasu` を `yomiyasu` にします。
+この1行があると、名前を出さずに記事や PR の説明文、コミットメッセージ、翻訳を書かせたときも、エージェントは yomiyasu で推敲します。コードを直したあとの作業の報告まで推敲させたいときは、「日本語の文章を書いたり直したりするときは、常に yomiyasu スキルで推敲してください。」とだけ書きます。プラグインで入れた場合は、こちらも `yomiyasu` を `yomiyasu:yomiyasu` に書き換えてください。
 
 #### Codex
 
-作業するリポジトリの `.agents/skills/` に置いた場合も、`npx skills add` や `gh skill install` で入れた場合も、スキルの名前は `yomiyasu:yomiyasu` です。スキルのフォルダに Codex 用のプラグインの設定 `.codex-plugin/plugin.json` が入っているためです。次の1行を書きます。
+`npx skills add` や `gh skill install` で入れた場合も、作業するリポジトリの `.agents/skills/` に置いた場合も、スキルの名前は `yomiyasu:yomiyasu` です。スキルのフォルダに Codex 用のプラグインの設定 `.codex-plugin/plugin.json` が入っているためです。次の1行を書きます。
 
 ```text
 記事、ドキュメント、PR の説明文、コミットメッセージなどの日本語の文章を書いたり直したりするときは、常に yomiyasu:yomiyasu スキルで推敲してください。コードを直したあとの作業の報告には使わなくてかまいません。
@@ -300,7 +296,7 @@ openskills はスキルの一覧を `AGENTS.md` に書き込み、エージェ�
 
 2.0.2 に更新したら、`npx openskills update yomiyasu` のあとに `npx openskills sync` も実行してください。スキルの description は sync のときに `AGENTS.md` に写されるので、sync するまで、エージェントは 2.0.1 の description をもとに yomiyasu を使うかどうかを決めます。
 
-openskills は既定でスキルをプロジェクトの `.claude/skills/` に置くので、Claude Code はこのスキルを `yomiyasu` という名前で直接読みます。この場合は Claude Code の節にある、スキルとして入れたときの1行を `CLAUDE.md` に書いてください。
+openskills は既定でスキルをプロジェクトの `.claude/skills/` に置くので、Claude Code はこのスキルを `yomiyasu` という名前で直接読みます。この場合は Claude Code の節の1行を、そのまま `CLAUDE.md` に書いてください。
 
 #### Claude.ai
 
