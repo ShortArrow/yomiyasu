@@ -374,6 +374,7 @@ def unchanged_check():
                 value = json.loads(out)
                 value.pop("context", None)
                 value.pop("fact_gaps", None)  # 任意の手がかりの追加キーを除いて比較する
+                value.pop("kept_marks", None)  # 2.2.1 で足した、残した印の語
                 for key in ("lint", "diff"):
                     if isinstance(value.get(key), dict):
                         value[key].pop("context", None)
@@ -1115,10 +1116,10 @@ class OptionTest(DocTypeCase):
 
     def test_d8_versions_do_not_change(self):
         """D8: --version と形式の版は変えない（9.7）。"""
-        self.assertEqual(call(yomiyasu_lint.main, ["--version"])[1], "yomiyasu_lint.py 2.2.0 (JSON format 2)\n")
-        self.assertEqual(call(yomiyasu_diff.main, ["--version"])[1], "yomiyasu_diff.py 2.2.0 (JSON format 2)\n")
+        self.assertEqual(call(yomiyasu_lint.main, ["--version"])[1], "yomiyasu_lint.py 2.2.1 (JSON format 2)\n")
+        self.assertEqual(call(yomiyasu_diff.main, ["--version"])[1], "yomiyasu_diff.py 2.2.1 (JSON format 2)\n")
         self.assertEqual(call(yomiyasu_check.main, ["--version"])[1],
-                         "yomiyasu_check.py 2.2.0 (record format 1, result format 1, materials format 1)\n")
+                         "yomiyasu_check.py 2.2.1 (record format 1, result format 1, materials format 1)\n")
 
 
 # ---- E. 速さ ----
