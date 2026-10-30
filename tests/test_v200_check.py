@@ -33,6 +33,9 @@ import unicodedata
 import unittest
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from portable import paced_limit, run_text  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "scripts"
@@ -85,11 +88,13 @@ RUN_PARTIAL_HEAD = "検査の一部を実行できませんでした（"
 PARTIAL_TAIL = "verify は実行せず、完了報告にこの出力の2行目を写してください。"
 RUN_UNRECORDED_PART = "記録を書けませんでした"
 RUN_DISCLAIMER = "この記録は検査を実行したことを示すだけで、意味が保たれたことや読みやすさの合格を示すものではありません。"
+# 候補があるときに、3行目のあとの候補の一覧に続けて出る案内（その2行のぶん、4行目からあとの行が2行下がる）
+RUN_HEAD_NOTE = "候補の中身は下の節にあります。出力を切らずに読んでください。"
 FAIL_ON_HEAD = "--fail-on={} の条件に当たりました（終了コード1）。"
 MATERIALS_DISCLAIMER = ("照らしたのは数値、名前、語、確度の語だけです。主張、条件、担当が資料どおりかは判定していません。"
                         "資料と読み比べてください。")
 SAME_FILE_ERROR = ("原文と最終稿が同じファイルです。書き直す前の原文を別のファイルに残し、最終稿を別のファイルに保存してから"
-                   "実行してください。原文を上書きしてしまったときは、git などで元の版を取り出して --source に渡してください。")
+                   "実行してください。原文を上書きしてしまったときは、git などで元の原稿を取り出して --source に渡してください。")
 GITIGNORE_LINES = ["# yomiyasu の検査記録。git に入れない。", "*"]
 
 # 3.9 verify の出力の1行目
@@ -130,7 +135,8 @@ RUN_JSON_KEYS = ("format", "format_version", "tool_version", "command", "status"
                  "materials")
 VERIFY_JSON_KEYS = ("format", "format_version", "tool_version", "command", "status", "status_line", "message",
                     "run_id", "attempt", "record_path", "final", "record_final_sha256", "mode", "context", "required_checks",
-                    "checks", "meaning_risk_count", "replay", "problems", "final_candidate_count", "changed_place_count")
+                    "checks", "meaning_risk_count", "replay", "problems", "final_candidate_count", "changed_place_count",
+                    "kept_marks")
 FILE_NAME = re.compile(r"^[A-Za-z0-9._-]+$")
 
 # 指示書2.2の3組（合成の文）
@@ -342,7 +348,7 @@ def inject_cli_code(path, code_lines):
     lines = source.splitlines(True)
     at = main_insertion_point(source)
     snippet = "if __name__ == \"__main__\":\n" + "".join("    " + line + "\n" for line in code_lines)
-    path.write_text("".join(lines[:at]) + snippet + "".join(lines[at:]), encoding="utf-8")
+    path.write_bytes(("".join(lines[:at]) + snippet + "".join(lines[at:])).encode("utf-8"))
 
 
 class CheckCase(unittest.TestCase):
@@ -393,7 +399,8 @@ class CheckCase(unittest.TestCase):
     # --- 実行 ---
 
     def check(self, *args, stdin=None, script=None, env=None, cwd=None, flags=("-B",)):
-        return subprocess.run(
+        """標準入力の文字列は、改行を変えずに UTF-8 のバイト列で渡す（portable.run_text）。"""
+        return run_text(
             [sys.executable] + list(flags) + [str(script or CHECK)] + [str(a) for a in args],
             input=stdin, cwd=str(cwd or self.root), env=env or self.env(),
             capture_output=True, encoding="utf-8", timeout=30,
@@ -432,14 +439,20 @@ class CheckCase(unittest.TestCase):
         self.assertEqual(positions, sorted(set(positions)), line)
         return match.group(1), dict(pairs)
 
+    def record_index(self, lines):
+        """run の出力の記録の行の位置。記録の行は5行目で、候補があるときは、3行目のあとに候補の一覧と案内の2行が入るので7行目。"""
+        index = 6 if len(lines) > 6 and lines[4] == RUN_HEAD_NOTE else 4
+        self.assertTrue(lines[index].startswith("記録: "), lines[:index + 1])
+        return index
+
     def record_from(self, lines):
-        self.assertTrue(lines[4].startswith("記録: "), lines[:5])
-        path = Path(lines[4][len("記録: "):])
+        index = self.record_index(lines)
+        path = Path(lines[index][len("記録: "):])
         self.assertTrue(path.is_file(), str(path))
         return path, json.loads(path.read_text(encoding="utf-8"))
 
     def save_record(self, path, record):
-        path.write_text(json.dumps(record, ensure_ascii=True, indent=1), encoding="utf-8")
+        path.write_bytes(json.dumps(record, ensure_ascii=True, indent=1).encode("utf-8"))
 
     def check_entry(self, record, name):
         entries = [entry for entry in record["checks"] if entry["name"] == name]
@@ -451,10 +464,17 @@ class CheckCase(unittest.TestCase):
         if code in (0, 1):
             self.assertEqual(process.stderr, "")
         lines = split_lines(process.stdout)
-        self.assertEqual(len(lines), 4 if state == "executed" else 3, lines)
         if state == "executed":
             record = json.loads(Path(lines[2][len("記録: "):]).read_text(encoding="utf-8"))
             summaries = {entry["name"]: entry["summary"] for entry in record["checks"]}
+            # 2.2.1: 記録に残した印の語があれば、5行目にその行が出る
+            kept = summaries["lint"].get("kept_marks")
+            self.assertEqual(len(lines), 5 if kept else 4, lines)
+            if kept:
+                self.assertTrue(lines[4].startswith("残した指摘の語: "), lines)
+        else:
+            self.assertEqual(len(lines), 3, lines)
+        if state == "executed":
             expected = "記録の中身: 見直し候補 最終稿 {}件".format(summaries["lint"]["candidate_count"])
             if "diff" in record["required_checks"]:
                 expected += "、直した箇所 {}か所（原文の件数と元と後は run の出力にあります）".format(summaries["diff"]["hunk_count"])
@@ -483,9 +503,12 @@ class TestK1RecordAndOutput(CheckCase):
             line1,
             line2,
             "実行した検査: lint（最終稿）候補0件、diff（原文→最終稿）変更あり 候補1件（うち意味が変わる恐れ1件）",
+            # 候補があるときは、3行目のあとに候補の短い一覧と、下の節を読む案内を出す
+            "diff の候補: 後1行目 number",
+            RUN_HEAD_NOTE,
             RUN_DISCLAIMER,
             "記録: " + str(record),
-            # diff の詰め: 5行目のあとに硬化の検査と勢いの検査の結果（完了報告の確認の記録に写す2行）
+            # diff の詰め: 記録の行のあとに硬化の検査と勢いの検査の結果（完了報告の確認の記録に写す2行）
             "硬化の検査: 候補なし",
             "勢いの検査: 候補なし",
             "慎重表現の検査: 候補なし",
@@ -541,12 +564,13 @@ class TestK1RecordAndOutput(CheckCase):
         self.assertEqual((record["skill"]["dir"], record["skill"]["skill_md_sha256"], record["skill"]["version"]),
                          (None, None, None))
         # diff の詰めの直し（反証で見つけた例）: scripts の隣の
-        # references/lists/ にある一覧のファイルの SHA-256 も tools に入れる（ルートの scripts の隣には3つともある）
+        # references/lists/ にある一覧のファイルの SHA-256 も tools に入れる（ルートの scripts の隣には一覧がみなある）
         lists = ROOT / "references" / "lists"
-        list_keys = ["references/lists/{}.txt".format(name) for name in ("nominalization", "intensifiers", "feelings", "hedges")]
+        list_keys = ["references/lists/{}.txt".format(name) for name in ("nominalization", "intensifiers", "feelings", "hedges",
+                                                                       "katakana-terms", "thin-evaluation", "renyo-nouns")]
         self.assertEqual(set(record["tools"]), set(TOOL_NAMES) | set(list_keys))
         for name in TOOL_NAMES:
-            self.assertEqual(record["tools"][name], {"version": "2.1.0", "sha256": sha256_file(SCRIPTS / name)})
+            self.assertEqual(record["tools"][name], {"version": "2.5.0", "sha256": sha256_file(SCRIPTS / name)})
         for key in list_keys:
             self.assertEqual(record["tools"][key], {"version": None, "sha256": sha256_file(ROOT / key)})
         # unicode_version は check の固め（反証レビュー compat 4）で足した。似かたを求めた Unicode の版
@@ -653,7 +677,7 @@ class TestK1RecordAndOutput(CheckCase):
             self.assertIn(key, result)
         self.assertEqual(list(result)[:3], ["format", "format_version", "tool_version"])
         self.assertEqual((result["format"], result["format_version"], result["tool_version"], result["command"]),
-                         ("yomiyasu-check-result", 1, "2.1.0", "run"))
+                         ("yomiyasu-check-result", 1, "2.5.0", "run"))
         self.assertEqual(result["status"], "executed")
         self.assertRegex(result["status_line"], K1_STATUS)
         self.assertEqual(result["message"], RUN_REWRITE_FIRST + self.finalize_file())
@@ -704,7 +728,7 @@ class TestRunThenVerify(CheckCase):
                   "checks=lint,diff meaning_risk=1 replay=").format(fields["run"], sha256_file(b)[:12])
         verify_lines, _ = self.assert_verify(self.check("verify", "--final", b), "executed", code=0)
         self.assertEqual(verify_lines, [VERIFY_LINE1["executed"].format(checks="lint、diff"),
-                                        common + "skipped", lines[4],
+                                        common + "skipped", lines[self.record_index(lines)],
                                         "記録の中身: 見直し候補 最終稿 0件、直した箇所 1か所（原文の件数と元と後は run の出力にあります）"])
         verify_lines, _ = self.assert_verify(self.check("verify", "--final", b, "--replay"), "executed", code=0)
         self.assertEqual(verify_lines[1], common + "ok")
@@ -717,7 +741,7 @@ class TestRunThenVerify(CheckCase):
             self.assertIn(key, result)
         self.assertEqual(list(result)[:3], ["format", "format_version", "tool_version"])
         self.assertEqual((result["format"], result["format_version"], result["tool_version"], result["command"]),
-                         ("yomiyasu-check-result", 1, "2.1.0", "verify"))
+                         ("yomiyasu-check-result", 1, "2.5.0", "verify"))
         self.assertEqual(result["status"], "executed")
         self.assertEqual(self.status(result["status_line"])[0], "executed")
         self.assertEqual(result["message"], VERIFY_LINE1["executed"].format(checks="lint、diff"))
@@ -806,6 +830,8 @@ class TestRunThenVerify(CheckCase):
             line1,
             line2,
             "実行した検査: lint（最終稿）候補0件、diff（原文→最終稿）変更あり 候補1件（うち意味が変わる恐れ0件）",
+            "diff の候補: 元の文にない語",
+            RUN_HEAD_NOTE,
             RUN_DISCLAIMER,
             "記録: " + str(record),
             "硬化の検査: 候補なし",
@@ -879,7 +905,7 @@ class TestRunThenVerify(CheckCase):
         b = self.write("b.md", "保存期間は30日です。\n")
         run_dir = self.state / "runs" / "x"
         run_dir.mkdir(parents=True)
-        (run_dir / "attempt-1.json").write_text('{"reviewed": true}', encoding="utf-8")
+        (run_dir / "attempt-1.json").write_bytes('{"reviewed": true}'.encode("utf-8"))
         index = self.state / "index" / "by-final" / sha256_file(b)
         index.mkdir(parents=True)
         (index / "x.1").write_bytes(b"")
@@ -1368,7 +1394,7 @@ class TestRunOptions(CheckCase):
         other = self.root / "other-state"
         process, lines = self.check_ok("run", "--source", a, "--final", b, "--state-dir", other)
         run_id = self.status(lines[1])[1]["run"]
-        self.assertEqual(lines[4], "記録: " + str(other / "runs" / run_id / "attempt-1.json"))
+        self.assertEqual(lines[self.record_index(lines)], "記録: " + str(other / "runs" / run_id / "attempt-1.json"))
         self.assertTrue((other / "runs" / run_id / "attempt-1.json").is_file())
         self.assertFalse(self.state.exists(), "YOMIYASU_STATE_DIR の場所には書かない")
         _, fields = self.assert_verify(self.check("verify", "--final", b, "--state-dir", other), "executed", code=0)
@@ -1425,6 +1451,8 @@ class TestComposeAndMaterials(CheckCase):
             line1,
             line2,
             "実行した検査: lint（最終稿）候補0件、資料との照合（資料2件→最終稿）資料にない数値・名前1件",
+            "資料との照合の候補: 後4行目 資料にない数値、資料にない語、最終稿にない確度の語",
+            RUN_HEAD_NOTE,
             RUN_DISCLAIMER,
             "記録: " + str(self.state / "runs" / run_id / "attempt-1.json"),
             "見直し候補: 最終稿 0件（新規作成なので原文の件数はありません。lint の規則に当たった数で、点数ではありません）",
@@ -1659,12 +1687,15 @@ class TestRecordingFailures(CheckCase):
         status, fields = self.status(lines[1])
         self.assertEqual(status, "unrecorded")
         self.assertIn(RUN_UNRECORDED_PART, lines[0])
-        # 3.5 の表の「記録を書けなかった」の行（{理由} は実装の文）
-        match = re.match(r"^検査を実行しましたが、記録を書けませんでした（(.+)）。--state-dir に書ける場所を指定して"
-                         r"もう一度実行するか、完了報告の「実行しなかった検査」に「記録（(.+)）」と書いてください。$", lines[0])
+        # 3.5 の表の「記録を書けなかった」の行（{理由} は実装の文）。v2.1.2 から、書き込みを拒まれたときは、ほかの OS
+        # ユーザーが作った状態フォルダかもしれないことと、--state-dir か YOMIYASU_STATE_DIR で分ける案内を足す
+        match = re.match(r"^検査を実行しましたが、記録を書けませんでした（(.+)）。ほかの OS ユーザー（Codex のサンドボックスなど）が"
+                         r"先に作った状態フォルダは、作ったユーザーしか書けないことがあります。--state-dir か YOMIYASU_STATE_DIR で"
+                         r"自分が書ける場所を指定してもう一度実行するか、完了報告の「実行しなかった検査」に「記録（(.+)）」と"
+                         r"書いてください。$", lines[0])
         self.assertIsNotNone(match, lines[0])
         self.assertEqual(match.group(1), match.group(2))
-        self.assertEqual(lines[4], "記録: なし（{}）".format(match.group(1)))
+        self.assertEqual(lines[self.record_index(lines)], "記録: なし（{}）".format(match.group(1)))
         self.assertEqual((fields["run"], fields["attempt"], fields.get("reason")), ("-", "-", "not_writable"))
         self.assertEqual(lines[-2:], lines[:2])
         self.assertIn("■ 全文差分（変更 1か所。省略していません）", lines)  # 検査は実行した
@@ -1680,9 +1711,9 @@ class TestRecordingFailures(CheckCase):
         process, lines = self.check_ok("run", "--source", a, "--final", b, "--no-record")
         status, fields = self.status(lines[1])
         self.assertEqual(status, "unrecorded")
-        # 10.4 S11: 1行目は表のとおりの文で、{仕上げ} を --no-record の文にする。5行目は「記録: なし（--no-record）」
+        # 10.4 S11: 1行目は表のとおりの文で、{仕上げ} を --no-record の文にする。記録の行（候補がなければ5行目）は「記録: なし（--no-record）」
         self.assertEqual(lines[0], RUN_REWRITE_FIRST + FINALIZE_NO_RECORD)
-        self.assertEqual(lines[4], "記録: なし（--no-record）")
+        self.assertEqual(lines[self.record_index(lines)], "記録: なし（--no-record）")
         self.assertEqual(lines[-2:], lines[:2])
         # 記録がないので実行IDと回は「-」。理由は reason= に書く
         # check の固め（勧め59）: verify の状態の名前 no_record と重ならない値にした
@@ -1869,7 +1900,8 @@ class TestReadOnlyAndWrites(CheckCase):
         process = self.check("verify", "--final", b)
         elapsed = time.perf_counter() - started
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
-        self.assertLess(elapsed, 1.0)
+        limit, detail = paced_limit(1.0, elapsed)  # 上限の秒数は、Windows の遅い機械では基準の処理の遅さの比で延ばす（portable.paced_limit）
+        self.assertLess(elapsed, limit, detail)
         process = self.check("verify", "--final", b, flags=("-B", "-X", "importtime"))
         self.assertEqual(process.returncode, 0, process.stdout)
         self.assertNotIn("yomiyasu_lint", process.stderr)
@@ -1892,7 +1924,7 @@ class TestReadOnlyAndWrites(CheckCase):
         # 見張りが働くこと: lint を別の名前で読み込む合成のスクリプトで、読み込みを見つける
         probe = self.root / "probe" / "load_renamed.py"
         probe.parent.mkdir()
-        probe.write_text(LOAD_UNDER_OTHER_NAME, encoding="utf-8")
+        probe.write_bytes(LOAD_UNDER_OTHER_NAME.encode("utf-8"))
         process, names = loaded(probe, scripts / "yomiyasu_lint.py")
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertEqual(names, ["yomiyasu_lint.py"])
@@ -2119,7 +2151,7 @@ class TestStateFolderPlace(CheckCase):
                 if kind == "dir":
                     (top / ".git").mkdir()
                 else:
-                    (top / ".git").write_text("gitdir: /nonexistent/worktree\n", encoding="utf-8")
+                    (top / ".git").write_bytes("gitdir: /nonexistent/worktree\n".encode("utf-8"))
                 a = self.write(kind + "/docs/a.md", "保存期間は3日です。\n")
                 b = self.write(kind + "/docs/b.md", "保存期間は30日です。\n")
                 process = self.run_without_state_env(top, deep, "run", "--source", a, "--final", b)
@@ -2129,7 +2161,7 @@ class TestStateFolderPlace(CheckCase):
                 status, fields = self.status(lines[1])
                 self.assertEqual(status, "executed")
                 expected = top / ".yomiyasu" / "runs" / fields["run"] / "attempt-1.json"
-                self.assertEqual(lines[4], "記録: " + str(expected))
+                self.assertEqual(lines[self.record_index(lines)], "記録: " + str(expected))
                 self.assertTrue(expected.is_file())
                 self.assertEqual((top / ".yomiyasu" / ".gitignore").read_text(encoding="utf-8").rstrip("\n").split("\n"),
                                  GITIGNORE_LINES)
@@ -2148,7 +2180,7 @@ class TestStateFolderPlace(CheckCase):
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         lines = split_lines(process.stdout)
         run_id = self.status(lines[1])[1]["run"]
-        self.assertEqual(lines[4], "記録: " + str(work / ".yomiyasu" / "runs" / run_id / "attempt-1.json"))
+        self.assertEqual(lines[self.record_index(lines)], "記録: " + str(work / ".yomiyasu" / "runs" / run_id / "attempt-1.json"))
 
 
 class TestCommonPromises(CheckCase):
@@ -2233,6 +2265,7 @@ class TestCommonPromises(CheckCase):
                                    cwd=str(self.root), env=self.env(), stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         process.stdout.close()
+        process.stdout = None
         _, err = process.communicate(timeout=30)
         message = err.decode("utf-8")
         self.assertEqual(process.returncode, 3, message)
@@ -2276,7 +2309,7 @@ class TestCommonPromises(CheckCase):
                 for copy in copies:
                     shutil.copyfile(str(SCRIPTS / copy), str(folder / copy))
                 if broken:
-                    (folder / broken[0]).write_text(broken[1], encoding="utf-8")
+                    (folder / broken[0]).write_bytes(broken[1].encode("utf-8"))
                 process = self.check("run", "--source", a, "--final", b, script=folder / "yomiyasu_check.py")
                 self.assertEqual(process.returncode, 3, process.stdout + process.stderr)
                 self.assertEqual(process.stdout, "")
@@ -2460,14 +2493,14 @@ class TestReviewFixes(CheckCase):
         diff の形式の版（MATERIALS_FORMAT_VERSION）はファイルの行から読む。diff が壊れていても版の行を出す（spec F5）。"""
         scripts = self.copy_scripts("skill-version")
         script = scripts / "yomiyasu_check.py"
-        expected = "yomiyasu_check.py 2.1.0 (record format 1, result format 1, materials format 1)\n"
+        expected = "yomiyasu_check.py 2.5.0 (record format 1, result format 1, materials format 1)\n"
         process = subprocess.run([sys.executable, "-B", "-c", LOAD_WORKER, str(scripts), str(script), "--version"],
                                  cwd=str(self.root), env=self.env(), capture_output=True, encoding="utf-8", timeout=30)
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertEqual(process.stdout, expected)
         self.assertEqual(re.findall(r"^LOADED-SCRIPTS \[(.*)\]$", process.stderr, flags=re.M), [""], process.stderr)
-        with open(str(scripts / "yomiyasu_diff.py"), "a", encoding="utf-8") as handle:
-            handle.write("\ndef broken_by_test(:\n")
+        with open(str(scripts / "yomiyasu_diff.py"), "ab") as handle:
+            handle.write(b"\ndef broken_by_test(:\n")
         process = self.check("--version", script=script)
         self.assertEqual((process.returncode, process.stdout, process.stderr), (0, expected, ""))
 
@@ -2562,7 +2595,7 @@ class TestReviewFixes(CheckCase):
         self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
         lines = split_lines(process.stdout)
         run_id = self.status(lines[1])[1]["run"]
-        self.assertEqual(lines[4], "記録: " + str(repo / ".yomiyasu" / "runs" / run_id / "attempt-1.json"))
+        self.assertEqual(lines[self.record_index(lines)], "記録: " + str(repo / ".yomiyasu" / "runs" / run_id / "attempt-1.json"))
         self.assert_verify(self.check("verify", "--final", b, cwd=docs, env=env), "executed", code=0)
         status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=str(repo),
                                 env=git_env, capture_output=True, encoding="utf-8", timeout=30)
@@ -2738,7 +2771,7 @@ class TestReviewFixes(CheckCase):
                 self.assertNotIn("BLOCKED-WRITES", process.stderr)
                 self.assertEqual(process.returncode, 0, process.stdout + process.stderr)
                 lines = split_lines(process.stdout)
-                self.assertTrue(lines[4].startswith("記録: " + str(top / ".yomiyasu" / "runs") + os.sep), lines[4])
+                self.assertTrue(lines[self.record_index(lines)].startswith("記録: " + str(top / ".yomiyasu" / "runs") + os.sep), lines[self.record_index(lines)])
                 self.assertEqual(sorted(path.name for path in docs.iterdir()), ["a.md", "b.md"])
 
     # --- robust R11: 作業ディレクトリがない ---

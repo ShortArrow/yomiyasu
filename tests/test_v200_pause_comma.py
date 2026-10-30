@@ -242,7 +242,11 @@ class PauseCommaTest(unittest.TestCase):
             self.assertEqual(len(pauses(text, doc_type="article")), 1, text)
 
     def test_t5_types_and_detection_gate(self):
-        self.assertEqual(lint.DOC_TYPE_ONLY_RULES, {"pause_comma": TYPES})
+        # 2.2.0 で dialogue_period（script だけ）と narrative_density（essay だけ）を、2.4.0 で slide_comma（slides だけ）を足した。
+        # pause_comma の組は変えない
+        self.assertEqual(lint.DOC_TYPE_ONLY_RULES,
+                         {"pause_comma": TYPES, "dialogue_period": ("script",), "narrative_density": ("essay",),
+                          "slide_comma": ("slides",)})
         text = REMOVE[3][0]
         with mock.patch.object(lint, "_pause_comma_hits", side_effect=AssertionError("検出を呼ばない")):
             for options in ({}, {"doc_type": "promo"}, {"reader": "general"}):
@@ -281,8 +285,8 @@ class PauseCommaTest(unittest.TestCase):
                 self.assertEqual(call(lint.main, ["-", "--doc-type", "article"] + flags, text)[0], 0)
         with tempfile.TemporaryDirectory() as tmp:
             source, final = Path(tmp) / "source.md", Path(tmp) / "final.md"
-            source.write_text(REMOVE[3][0].replace("、", ""), encoding="utf-8")
-            final.write_text(REMOVE[3][0], encoding="utf-8")
+            source.write_bytes(REMOVE[3][0].replace("、", "").encode("utf-8"))
+            final.write_bytes(REMOVE[3][0].encode("utf-8"))
             code, out, err = call(check.main, ["run", "--source", str(source), "--final", str(final),
                                               "--state-dir", str(Path(tmp) / "state"),
                                               "--doc-type", "article", "--fail-on=warn"])
@@ -329,7 +333,7 @@ class PauseCommaTest(unittest.TestCase):
                     expected = [f for f in plain["findings"]
                                 if f["rule"] not in lint.DOC_TYPE_SKIP_RULES[value]
                                 and not f["message"].startswith(partial.get(f["rule"], ()))]
-                    self.assertEqual([f for f in result["findings"] if f["rule"] != "pause_comma"], expected)
+                    self.assertEqual([f for f in result["findings"] if f["rule"] not in lint.DOC_TYPE_ONLY_RULES], expected)
                     self.assertEqual(result["metrics"], plain["metrics"])
 
     def test_t12_long_lines_and_documents(self):
@@ -353,12 +357,14 @@ class PauseCommaTest(unittest.TestCase):
         self.assertIn("## 9. 間を作るだけの読点", (ROOT / "references/slop-catalog.md").read_text(encoding="utf-8"))
 
     def test_t14_help_is_table_driven(self):
-        expected = "種類を指定したときだけ当てる規則: pause_comma（promo を除く11種類。種類を指定しないときは出しません）"
+        # 2.2.0 で script を足したので、promo と script を除く11種類
+        expected = "種類を指定したときだけ当てる規則: pause_comma（promo、script を除く11種類。種類を指定しないときは出しません）"
         self.assertIn(expected, call(lint.main, ["--help"])[1])
         with mock.patch.object(lint, "DOC_TYPE_ONLY_RULES", {"pause_comma": TYPES, "sample": ("article",)}):
             help_text = lint._doc_type_table()
             self.assertIn("sample（", help_text)
-            self.assertIn("1種類。種類を指定しないときは出しません）", help_text)
+            # 2.2.0: 当てる種類が外す種類より少ないときは、当てる種類を並べる（dialogue_period の「script だけ」と同じ形）
+            self.assertIn("sample（article だけ。種類を指定しないときは出しません）", help_text)
         with mock.patch.object(lint, "DOC_TYPE_ONLY_RULES", {}):
             self.assertNotIn("種類を指定したときだけ当てる規則", lint._doc_type_table())
 

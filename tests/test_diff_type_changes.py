@@ -380,26 +380,29 @@ class TestOutputShape(unittest.TestCase):
         # G7（種類と読者の設計 9.4）: not_judged の次に context
         # diff の詰め: full_diff のあとに文体の硬化の検査（stiffness）と勢いの検査（tone）
         # diff の詰めの直し（反証で見つけた例）: 気持ちの語の一覧の出どころ（feeling）
+        # 2.4.0: 原文にない人や担当を足した文（added_actors）を最後に
+        # 2.5.0: 見出しの形の変化（heading_shapes）と、読点が増えた候補（comma_increase）を最後に
         self.assertEqual(list(result), ["format", "format_version", "tool_version", "status", "changed",
                                         "candidate_count", "meaning_risk_count", "fail_on_meaning_risk_count",
                                         "not_judged", "context", "meaning_risks",
                                         "markers", "new_words", "lost_words", "structure", "spans", "logic", "bold",
-                                        "endings", "type_changes", "full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness", "register"])
+                                        "endings", "type_changes", "full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness", "register",
+                                        "added_actors", "heading_shapes", "comma_increase"])
         self.assertEqual(set(result["type_changes"][0]), {"orig", "rewrite", "lost", "added"})
 
     def test_report_has_the_new_heading_only_when_needed(self):
         changed = yomiyasu_diff.report(yomiyasu_diff.diff("原因は設定ミスだとされる。\n", "原因は設定ミスだ。\n"))
-        self.assertIn("■ 文の種類の印が変わった文", changed)
-        self.assertIn("消えた印: 伝聞（とされる）", changed)
+        self.assertIn("■ 文の種類を表す語が変わった文", changed)
+        self.assertIn("消えた語: 伝聞（とされる）", changed)
         self.assertIn("原因は設定ミスだとされる。", changed)
         quiet = yomiyasu_diff.report(yomiyasu_diff.diff("原因は設定ミスだとされる。\n", "原因は、設定ミスだとされる。\n"))
-        self.assertNotIn("文の種類の印", quiet)
+        self.assertNotIn("文の種類を表す語", quiet)
 
     def test_cli_json_includes_type_changes(self):
         with tempfile.TemporaryDirectory() as folder:
             before, after = Path(folder) / "a.md", Path(folder) / "b.md"
-            before.write_text("この方式は遅いと思う。\n", encoding="utf-8")
-            after.write_text("この方式は遅い。\n", encoding="utf-8")
+            before.write_bytes("この方式は遅いと思う。\n".encode("utf-8"))
+            after.write_bytes("この方式は遅い。\n".encode("utf-8"))
             process = subprocess.run([sys.executable, str(ROOT / "scripts" / "yomiyasu_diff.py"), str(before), str(after), "--json"],
                                      capture_output=True, text=True, encoding="utf-8")
         self.assertEqual(process.returncode, 0)

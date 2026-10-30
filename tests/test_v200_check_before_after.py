@@ -57,16 +57,17 @@ class BeforeAfterTest(DocTypeCase):
         _, lint, _ = self.lint("--json", a)
         n = json.loads(lint)["candidate_count"]
         lines = out.splitlines()
-        self.assertTrue(lines[4].startswith("記録: "))
-        self.assertEqual(lines[5:9], ["硬化の検査: 候補なし", "勢いの検査: 候補なし",
-                                     "慎重表現の検査: 候補なし", "値の検査: 候補なし"])
+        index = self.record_index(lines)
+        self.assertEqual(lines[index + 1:index + 5], ["硬化の検査: 候補なし", "勢いの検査: 候補なし",
+                                                     "慎重表現の検査: 候補なし", "値の検査: 候補なし"])
         self.assertIn("lint（最終稿）候補0件", lines[2])
-        self.assertEqual(lines[9], "見直し候補: 原文 {}件 → 最終稿 0件（{}）".format(n, NOTE))
+        self.assertEqual(lines[index + 5], "見直し候補: 原文 {}件 → 最終稿 0件（{}）".format(n, NOTE))
 
     def test_t02_headings_and_order(self):
         _, out, _ = self.run_pair(OLD + "\n確認済みです。\n", NEW + "\n確認中です。\n")
         lines = out.splitlines()
-        self.assertEqual(lines[10:12], ["", "■ 直した箇所（2か所。元と後）"])
+        index = self.record_index(lines)
+        self.assertEqual(lines[index + 6:index + 8], ["", "■ 直した箇所（2か所。元と後）"])
         short = out.split("■ 直した箇所", 1)[1].split("\n\n", 1)[0]
         full = out.split("■ 全文差分（", 1)[1]
         self.assertEqual([s for s in short.splitlines() if s.startswith("@ ")],
@@ -287,7 +288,8 @@ class BeforeAfterTest(DocTypeCase):
                 self.assertIn("見直し候補: 資料1（原文とみなした資料） 0件 → 最終稿 0件", out)
                 self.assertIn("■ 直した箇所", out)
             else:
-                self.assertEqual(out.splitlines()[5], "見直し候補: 最終稿 0件（{}）".format(COMPOSE_NOTE))
+                lines = out.splitlines()
+                self.assertEqual(lines[self.record_index(lines) + 1], "見直し候補: 最終稿 0件（{}）".format(COMPOSE_NOTE))
                 self.assertNotIn("■ 直した箇所", out)
             self.assertEqual(any(c.args[1] == "source_lint" for c in start.call_args_list), treated)
             _, data, _ = self.check("run", "--material", a, "--final", b, "--no-record", "--json")
@@ -337,7 +339,7 @@ class BeforeAfterTest(DocTypeCase):
         original = check._run_checks
         def change(ctx, *args):
             value = original(ctx, *args)
-            Path(ctx.final.path).write_text("途中で変更しました。\n", encoding="utf-8")
+            Path(ctx.final.path).write_bytes("途中で変更しました。\n".encode("utf-8"))
             return value
         with mock.patch.object(check, "_run_checks", change):
             code, out, _ = self.run_pair(extra=("--no-record",))
@@ -375,7 +377,8 @@ class BeforeAfterTest(DocTypeCase):
         expected = ["format", "format_version", "tool_version", "command", "status", "status_line", "message", "next",
                     "run_id", "attempt", "fix_count", "mode", "context", "record_path", "fail_on_hit", "meaning_risk_count",
                     "fail_on_meaning_risk_count", "stiffness_check", "tone_check", "hedges_check", "immutable_check",
-                    "politeness_check", "lint", "diff", "materials", "candidate_counts", "changed_places", "fact_gaps"]
+                    "politeness_check", "lint", "diff", "materials", "candidate_counts", "changed_places", "fact_gaps",
+                    "kept_marks"]
         self.assertEqual(list(data), expected)
         self.assertEqual(data["format_version"], 1)
         self.assertEqual(data["candidate_counts"], {"basis": "lint", "source": 0, "final": 0, "source_kind": "original",
@@ -392,7 +395,7 @@ class BeforeAfterTest(DocTypeCase):
         self.assertEqual(len(out.splitlines()), 4)
         self.assertEqual(out.splitlines()[3], "記録の中身: 見直し候補 最終稿 0件、直した箇所 1か所（原文の件数と元と後は run の出力にあります）")
         data = json.loads(json_out)
-        self.assertEqual(list(data)[-2:], ["final_candidate_count", "changed_place_count"])
+        self.assertEqual(list(data)[-3:], ["final_candidate_count", "changed_place_count", "kept_marks"])
         self.assertEqual((data["final_candidate_count"], data["changed_place_count"]), (0, 1))
         material, final = self.write("memo.md", MEMO), self.write("composed.md", COMPOSED)
         self.check("run", "--material", material, "--final", final)

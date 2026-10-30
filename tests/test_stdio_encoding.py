@@ -48,7 +48,7 @@ class TestStdioEncoding(unittest.TestCase):
 
     def write(self, name, text):
         path = self.root / name
-        path.write_text(text, encoding="utf-8")
+        path.write_bytes(text.encode("utf-8"))
         return path
 
     def assert_ascii_json(self, process):
@@ -167,6 +167,8 @@ def run_in_process(script, args, stdin=_KEEP, stdout=_KEEP):
         patches.append(mock.patch.object(sys, "stdin", stdin))
     # Never let the script reconfigure the test runner's own stdout.
     patches.append(mock.patch.object(sys, "stdout", io.StringIO() if stdout is _KEEP else stdout))
+    # lint、diff、check は __main__ として動くと sys.dont_write_bytecode を真にする。試験のプロセスの値は元に戻す。
+    patches.append(mock.patch.object(sys, "dont_write_bytecode", sys.dont_write_bytecode))
     with contextlib.ExitStack() as stack:
         for patch in patches:
             stack.enter_context(patch)
@@ -184,7 +186,7 @@ class TestStreamsWithoutReconfigure(unittest.TestCase):
         folder = tempfile.TemporaryDirectory(prefix="yomiyasu-stdio-")
         self.addCleanup(folder.cleanup)
         self.path = Path(folder.name) / "sample.md"
-        self.path.write_text(SAMPLE, encoding="utf-8")
+        self.path.write_bytes(SAMPLE.encode("utf-8"))
 
     def test_lint_writes_json_to_string_stdout(self):
         out = io.StringIO()
@@ -208,7 +210,7 @@ class TestStreamsWithoutReconfigure(unittest.TestCase):
 
     def test_diff_writes_json_to_string_stdout(self):
         after = self.path.with_name("after.md")
-        after.write_text("本記事では、設計の本質に迫りました。\n", encoding="utf-8")
+        after.write_bytes("本記事では、設計の本質に迫りました。\n".encode("utf-8"))
         out = io.StringIO()
         self.assertEqual(run_in_process(DIFF, [self.path, after, "--json"], stdout=out), 0)
         self.assertIsInstance(json.loads(out.getvalue()), dict)
@@ -223,7 +225,7 @@ class TestStreamsWithoutReconfigure(unittest.TestCase):
 
     def test_check_writes_json_to_string_stdout(self):
         after = self.path.with_name("after.md")
-        after.write_text("本記事では、設計の本質に迫りました。\n", encoding="utf-8")
+        after.write_bytes("本記事では、設計の本質に迫りました。\n".encode("utf-8"))
         out = io.StringIO()
         self.assertEqual(self.run_check_in_process(["run", "--source", self.path, "--final", after, "--json"],
                                                    stdout=out), 0)
@@ -247,14 +249,14 @@ class TestStreamsWithoutReconfigure(unittest.TestCase):
 
     def test_check_verify_runs_without_stdout(self):
         after = self.path.with_name("after.md")
-        after.write_text("本記事では、設計の本質に迫りました。\n", encoding="utf-8")
+        after.write_bytes("本記事では、設計の本質に迫りました。\n".encode("utf-8"))
         self.assertEqual(self.run_check_in_process(["run", "--source", self.path, "--final", after],
                                                    stdout=io.StringIO()), 0)
         self.assertEqual(self.run_check_in_process(["verify", "--final", after], stdout=None), 0)
 
     def test_check_runs_without_stdout(self):
         after = self.path.with_name("after.md")
-        after.write_text("本記事では、設計の本質に迫りました。\n", encoding="utf-8")
+        after.write_bytes("本記事では、設計の本質に迫りました。\n".encode("utf-8"))
         self.assertEqual(self.run_check_in_process(["run", "--source", self.path, "--final", after], stdout=None), 0)
 
     def test_check_rejects_missing_stdin_with_exit_code_2(self):

@@ -21,6 +21,7 @@ import unicodedata
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from portable import paced_limit, timing_clock  # noqa: E402
 from test_v200_check import (  # noqa: E402
     CHECK, CheckCase, ROOT, SCRIPTS, SKILL_MD, TOOL_NAMES, FINALIZE_FILE, FINALIZE_STDIN, RUN_COMPOSE_FIRST, RUN_REWRITE_FIRST,
     RUN_REWRITE_FIRST_NO_CANDIDATES, RUN_SAME_FINAL, RUN_AFTER_FIX, RUN_OVER_LIMIT, VERIFY_LINE1,
@@ -61,7 +62,7 @@ RUN_NO_CHANGE_NEW = ("検査を実行しました。原文から変更はあり�
 RUN_NO_CHANGE_TEXT_SAME = ("検査を実行しました。原文から変更はありません（改行コード、BOM、末尾の改行だけが違います）。"
                            "書き直したのに変更なしと出たときは、原文を上書きしていないか確かめてください。")
 VERIFY_TEXT_SAME_NOTE = "本文は記録と同じで、改行コード、BOM、末尾の改行だけが違います。run をもう一度実行しても修正には数えません。"
-SAME_FILE_TAIL = ("元の版を取り出せないときは、最終稿を写して --source に渡さず、完了報告の「実行しなかった検査」に"
+SAME_FILE_TAIL = ("元の原稿を取り出せないときは、最終稿を写して --source に渡さず、完了報告の「実行しなかった検査」に"
                   "「diff（原文を上書きしたため）」と書いてください。")
 # 59: 記録を書かないときの4行目と {仕上げ}
 UNRECORDED_DISCLAIMER = "この結果は検査を実行したことを示すだけで、意味が保たれたことや読みやすさの合格を示すものではありません。"
@@ -298,9 +299,13 @@ class TestC44Similarity(unittest.TestCase):
         source = b"\n".join(source for _, source, _ in pairs) * 3
         final = b"\n".join(final for _, _, final in pairs) * 3
         self.assertGreater(len(source.decode("utf-8")), 60000)
-        started = time.perf_counter()
+        # 上限の秒数は、Windows の遅い機械では基準の処理の遅さの比で延ばす（portable.paced_limit）。時間は CPU 時間で測る
+        clock = timing_clock()
+        started = clock()
         self.similarity(source, final)
-        self.assertLess(time.perf_counter() - started, 0.5)
+        elapsed = clock() - started
+        limit, detail = paced_limit(0.5, elapsed)
+        self.assertLess(elapsed, limit, detail)
 
     def test_composition_that_keeps_the_memo_wording_is_treated(self):
         """メモの言い回しをほぼそのまま残した新規作成は、推敲と見分けられないので、原文とみなす（しきい値を超える）。"""
@@ -921,7 +926,8 @@ class TestOutputWording(CheckCase):
         b = self.write("b.md", "保存期間は30日です。\n")
         process, lines = self.check_ok("run", "--source", a, "--final", b, "--no-record")
         self.assertEqual(lines[0], RUN_REWRITE_FIRST + FINALIZE_NO_RECORD_NEW)
-        self.assertEqual(lines[3], UNRECORDED_DISCLAIMER)
+        # 断りの行は記録の行のすぐ上（候補がなければ4行目。候補があると、候補の一覧と案内の2行のぶん下がる）
+        self.assertEqual(lines[self.record_index(lines) - 1], UNRECORDED_DISCLAIMER)
         self.assertEqual(self.status(lines[1])[1]["reason"], "no_record_option")
 
 
@@ -1324,7 +1330,7 @@ class TestReviewRecheckGuard(CheckCase):
         check = scripts / "yomiyasu_check.py"
         source = check.read_text(encoding="utf-8")
         self.assertIn("_SIMILAR_TO_SOURCE = 0.53\n", source)
-        check.write_text(source.replace("_SIMILAR_TO_SOURCE = 0.53\n", "_SIMILAR_TO_SOURCE = 0.999\n"), encoding="utf-8")
+        check.write_bytes(source.replace("_SIMILAR_TO_SOURCE = 0.53\n", "_SIMILAR_TO_SOURCE = 0.999\n").encode("utf-8"))
         process = self.check("verify", "--final", b, "--json", script=check)
         self.assertEqual(process.returncode, 1, process.stdout + process.stderr)
         result = json.loads(process.stdout)

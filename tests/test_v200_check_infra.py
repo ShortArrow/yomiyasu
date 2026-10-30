@@ -27,13 +27,17 @@ import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from test_v200_check import (  # noqa: E402
-    CHECK, CheckCase, FINALIZE_STATE_DIR, RUN_REWRITE_FIRST, RUN_REWRITE_FIRST_NO_CANDIDATES, ROOT, SCRIPTS, SKILL_MD,
-    TOOL_NAMES, VERIFY_LINE1, sha256_file, split_lines)
+    CHECK, CheckCase, FINALIZE_STATE_DIR, RUN_HEAD_NOTE, RUN_REWRITE_FIRST, RUN_REWRITE_FIRST_NO_CANDIDATES, ROOT, SCRIPTS,
+    SKILL_MD, TOOL_NAMES, VERIFY_LINE1, sha256_file, split_lines)
 
 sys.path.insert(0, str(SCRIPTS))
 import yomiyasu_diff  # noqa: E402
+import yomiyasu_lint  # noqa: E402
 
-LIST_NAMES = ("nominalization", "intensifiers", "feelings", "hedges")
+# diff が読む4つの一覧と、2.2.0 で lint が読む2つの一覧（check の記録の tools にはどれも入る）
+DIFF_LIST_NAMES = ("nominalization", "intensifiers", "feelings", "hedges")
+LINT_LIST_NAMES = ("katakana-terms", "thin-evaluation", "renyo-nouns")
+LIST_NAMES = DIFF_LIST_NAMES + LINT_LIST_NAMES
 LIST_KEYS = tuple("references/lists/{}.txt".format(name) for name in LIST_NAMES)
 LISTS = ROOT / "references" / "lists"
 
@@ -219,7 +223,7 @@ class ListHashTest(CheckCase):
         script = scripts / "yomiyasu_check.py"
         a, b, lines = self.run_skill(script, pair=("この店のラーメンは本当においしいです。\n", "この店のラーメンはおいしいです。\n"))
         path = lists / "intensifiers.txt"
-        path.write_text(path.read_text(encoding="utf-8").replace("本当に\n", ""), encoding="utf-8")
+        path.write_bytes(path.read_text(encoding="utf-8").replace("本当に\n", "").encode("utf-8"))
         expected = LIST_CHANGED_LINE.format("references/lists/intensifiers.txt")
         for extra in ([], ["--replay"]):
             with self.subTest(extra=extra):
@@ -285,7 +289,9 @@ class ListHashTest(CheckCase):
         module = load_check_module()
         self.assertEqual(tuple(module._LIST_NAMES), LIST_NAMES)
         # fact-gaps は任意の手がかり。verify の通常判定ではなく replay で比べる。
-        self.assertEqual(set(LIST_NAMES) | {"fact-gaps"}, set(yomiyasu_diff.BUILTIN_LISTS))
+        self.assertEqual(set(DIFF_LIST_NAMES) | {"fact-gaps"}, set(yomiyasu_diff.BUILTIN_LISTS))
+        # 2.2.0: lint の katakana_term と thin_evaluation の一覧
+        self.assertEqual(set(LINT_LIST_NAMES), set(yomiyasu_lint._V220_BUILTIN_LISTS))
 
 
 # ---- spec の F5 の後半: 読めない一覧の知らせと、気持ちの語の一覧の出どころ ----
@@ -312,7 +318,8 @@ class ListProblemTest(unittest.TestCase):
         self.assertEqual((result["stiffness"]["list"], result["stiffness"]["list_problem"]),
                          ("references/lists/nominalization.txt", None))
         self.assertEqual((result["tone"]["list"], result["tone"]["list_problem"]), ("references/lists/intensifiers.txt", None))
-        self.assertEqual(list(result)[-8:], ["full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness", "register"])
+        self.assertEqual(list(result)[-11:], ["full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness",
+                                              "register", "added_actors", "heading_shapes", "comma_increase"])
 
     def test_missing_lists_are_silent(self):
         scripts = copy_scripts(self.folder)
@@ -381,8 +388,10 @@ class ListProblemTest(unittest.TestCase):
         stiff = lines.index("■ 文体の硬化（一覧の注意）")
         self.assertEqual(lines[stiff + 1], LIST_PROBLEM_LINE.format(LIST_LABELS["nominalization"], "nominalization",
                                                                      "UTF-8 として読めません"))
-        # 6行目と7行目（完了報告に写す値）は候補の数のまま
-        self.assertEqual(lines[5:7], ["硬化の検査: 候補なし", "勢いの検査: 候補なし"])
+        # 記録の行のあとの2行（完了報告に写す値。候補がなければ6行目と7行目、候補の一覧と案内の2行があれば8行目と9行目）は候補の数のまま
+        index = 6 if lines[4] == RUN_HEAD_NOTE else 4
+        self.assertTrue(lines[index].startswith("記録: "), lines[:index + 1])
+        self.assertEqual(lines[index + 1:index + 3], ["硬化の検査: 候補なし", "勢いの検査: 候補なし"])
 
 
 # ---- regress の R8: BOM つきの UTF-8 ----
@@ -410,7 +419,7 @@ class BomListTest(unittest.TestCase):
                                      env=dict(os.environ, PYTHONIOENCODING="utf-8"), timeout=60)
             self.assertEqual(process.returncode, 0, process.stderr.decode("utf-8", "replace"))
             loaded = json.loads(process.stdout.decode("utf-8"))
-            for name in LIST_NAMES:
+            for name in DIFF_LIST_NAMES:
                 with self.subTest(name=name):
                     self.assertEqual(loaded[name]["source"], "references/lists/{}.txt".format(name))
                     builtin = [item if isinstance(item, str) else list(item) for item in yomiyasu_diff.BUILTIN_LISTS[name]]

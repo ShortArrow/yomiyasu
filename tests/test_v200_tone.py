@@ -229,8 +229,8 @@ class NotCountedTest(unittest.TestCase):
     def test_cli_fail_on_exit_zero(self):
         with tempfile.TemporaryDirectory() as folder:
             a, b = Path(folder) / "a.md", Path(folder) / "b.md"
-            a.write_text("最強のお土産！\n", encoding="utf-8")
-            b.write_text("最強のお土産、\n", encoding="utf-8")
+            a.write_bytes("最強のお土産！\n".encode("utf-8"))
+            b.write_bytes("最強のお土産、\n".encode("utf-8"))
             process = subprocess.run([sys.executable, "-B", str(SCRIPTS / "yomiyasu_diff.py"), "--fail-on=meaning-risk",
                                       str(a), str(b)], capture_output=True, env=dict(os.environ, PYTHONIOENCODING="utf-8"))
         self.assertEqual(process.returncode, 0)
@@ -272,8 +272,11 @@ class PromoDocTypeTest(unittest.TestCase):
         promo = yomiyasu_lint.lint_text(text, doc_type="promo")
         self.assertNotIn("emoji_prohibited", [f["rule"] for f in promo["findings"]])
         # 作者の判断（2026-10-14 朝）で fragment_run も外す（評価の語を短く重ねる型を勢いとして残す）
-        self.assertEqual(promo["context"]["skipped_by_doc_type"], {"emoji_prohibited": 1, "fragment_run": 0})
-        self.assertEqual(yomiyasu_lint.DOC_TYPE_SKIP_RULES["promo"], ("emoji_prohibited", "fragment_run"))
+        # 2.2.0 で metaphor_label と bare_verb_chain も外す
+        self.assertEqual(promo["context"]["skipped_by_doc_type"],
+                         {"bare_verb_chain": 0, "emoji_prohibited": 1, "fragment_run": 0, "metaphor_label": 0})
+        self.assertEqual(yomiyasu_lint.DOC_TYPE_SKIP_RULES["promo"],
+                         ("bare_verb_chain", "emoji_prohibited", "fragment_run", "metaphor_label"))
 
     def test_other_doc_types_keep_emoji(self):
         text = "新作のケーキが並びました\U0001F370\n"

@@ -7,12 +7,13 @@ import json
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import yomiyasu_diff as diff
+sys.path.insert(0, str(ROOT / "tests"))
+from portable import paced_limit, timing_clock  # noqa: E402
 
 EXAMPLES = {'S1': ('プールサイズの暫定引き上げは、別の負荷問題を誘発するかもしれません。\n', 'プールサイズの暫定的な拡張は、別の負荷問題を誘発するおそれがあります。\n'),
  'S2': ('キャッシュの再構築が完了するまでの間、数十分程度は影響が続くと思われます。\n', 'キャッシュの再構築が完了するまでの数十分程度は、影響が続く見込みです。\n'),
@@ -306,13 +307,16 @@ TOP_KEYS = ['format',
  'hedges',
  'immutable',
  'politeness',
- 'register']
+ 'register',
+ 'added_actors',
+ 'heading_shapes',
+ 'comma_increase']
 
-RULES_BASELINE = '■ 規則の見直し候補（4件）\n■ 元の文にない語: 拡張、暫定的\n■ 消えた語: 暫定引\n■ 文末の種類が変わった文（立場に合う向きか見る）\n- 推量・考え → 説明（〜ます）: プールサイズの暫定的な拡張は、別の負荷問題を誘発するおそれがあります。\n■ 文の種類の印が変わった文（伝聞・推量・意見・例え・依頼が、元の文と同じか見る）\n- 元: プールサイズの暫定引き上げは、別の負荷問題を誘発するかもしれません。\n  後: プールサイズの暫定的な拡張は、別の負荷問題を誘発するおそれがあります。\n  消えた印: 推量（かもしれません）'
+RULES_BASELINE = '■ 規則の見直し候補（4件）\n■ 元の文にない語: 拡張、暫定的\n■ 消えた語: 暫定引\n■ 文末の種類が変わった文（立場に合う向きか見る）\n- 推量・考え → 説明（〜ます）: プールサイズの暫定的な拡張は、別の負荷問題を誘発するおそれがあります。\n■ 文の種類を表す語が変わった文（伝聞・推量・意見・例え・依頼が、元の文と同じか見る）\n- 元: プールサイズの暫定引き上げは、別の負荷問題を誘発するかもしれません。\n  後: プールサイズの暫定的な拡張は、別の負荷問題を誘発するおそれがあります。\n  消えた語: 推量（かもしれません）'
 
 RESTORED_BASELINE = {'format': 'yomiyasu-diff',
  'format_version': 2,
- 'tool_version': '2.1.0',
+ 'tool_version': '2.5.0',
  'status': 'has_candidates',
  'changed': True,
  'candidate_count': 6,
@@ -494,7 +498,10 @@ RESTORED_BASELINE = {'format': 'yomiyasu-diff',
               'candidate_count': 0,
               'candidates': [],
               'threshold': {'min_sentences': 3, 'min_ratio': 0.5},
-              'skipped_by': None}}
+              'skipped_by': None},
+ 'added_actors': [],
+ 'heading_shapes': [],
+ 'comma_increase': None}
 
 def risks(result, kind, subkind=None):
     return [r for r in result['meaning_risks']
@@ -539,8 +546,8 @@ class HedgeMarks(unittest.TestCase):
             self.assertEqual(result['fail_on_meaning_risk_count'], 1)
         if tag == 'S1':
             report = diff.report(result)
-            self.assertIn('■ 文の種類の印が変わった文', report)
-            self.assertNotIn('- 文の種類の印が変わった:', report)
+            self.assertIn('■ 文の種類を表す語が変わった文', report)
+            self.assertNotIn('- 文の種類を表す語が変わった:', report)
             self.assertNotIn('■ 意味が変わる恐れ', report)
             self.assertEqual(diff.report_parts(result)['rules'], RULES_BASELINE)
             self.assertEqual(diff.meaning_risks(*EXAMPLES[tag], type_changes=result['type_changes']),
@@ -560,24 +567,25 @@ class HedgeMarks(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             old, new = Path(tmp) / 'old.md', Path(tmp) / 'new.md'
             for tag in ('S1', 'U1', 'K1'):
-                old.write_text(EXAMPLES[tag][0], encoding='utf-8')
-                new.write_text(EXAMPLES[tag][1], encoding='utf-8')
+                old.write_bytes(EXAMPLES[tag][0].encode('utf-8'))
+                new.write_bytes(EXAMPLES[tag][1].encode('utf-8'))
                 for fail_on in (False, True):
                     with self.subTest(tag=tag, fail_on=fail_on):
                         cmd = [sys.executable, '-B', str(ROOT / 'scripts/yomiyasu_diff.py'), '--json']
                         if fail_on:
                             cmd.append('--fail-on=meaning-risk')
-                        process = subprocess.run(cmd + [str(old), str(new)], capture_output=True, text=True)
+                        process = subprocess.run(cmd + [str(old), str(new)], capture_output=True, text=True, encoding='utf-8')
                         self.assertEqual(process.returncode, int(fail_on and tag != 'S1'), process.stderr)
                         self.assertEqual(json.loads(process.stdout), diff.diff(*EXAMPLES[tag]))
 
     def test_P3_help(self):
         process = subprocess.run([sys.executable, '-B', str(ROOT / 'scripts/yomiyasu_diff.py'), '--help'],
-                                 capture_output=True, text=True)
+                                 capture_output=True, text=True, encoding='utf-8')
         self.assertEqual(process.returncode, 0, process.stderr)
-        self.assertIn('推量の印が同じ強さの慎重な言い方に替わっただけの文', process.stdout)
         # ヘルプは端末の幅で折り返し、日本語の語の途中でも改行が入るので、空白をすべて除いて比べる
-        # （v2.1.0 で --fail-on の説明の文が変わり、折り返しの位置がこの語句の中に来た）
+        # （v2.1.0 で --fail-on の説明の文が変わり、折り返しの位置がこの語句の中に来た。v2.4.0 で「推量の印」を
+        # 「推量の言い方」にして、上の語句の中にも来た）
+        self.assertIn('推量の言い方が、同じ強さの別の慎重な言い方に替わっただけの文', ''.join(process.stdout.split()))
         self.assertIn('かもしれません→恐れがあります、と思われます→見込みです', ''.join(process.stdout.split()))
         self.assertIn('かもしれない → 見込み', process.stdout)
 
@@ -597,12 +605,15 @@ class HedgeMarks(unittest.TestCase):
         # 6万字をすべて替える。反復文字の負荷に、推量の印の例を添える。
         old = 'a' * 60000 + '\n\n' + EXAMPLES['S1'][0]
         new = 'b' * 60000 + '\n\n' + EXAMPLES['S1'][1]
+        # 上限の秒数は、Windows の遅い機械では基準の処理の遅さの比で延ばす（portable.paced_limit）。時間は CPU 時間で測る
+        clock = timing_clock()
         durations = []
         for _ in range(3):
-            start = time.perf_counter()
+            start = clock()
             result = diff.diff(old, new)
-            durations.append(time.perf_counter() - start)
-        self.assertLess(sorted(durations)[1], 3.0, durations)
+            durations.append(clock() - start)
+        limit, detail = paced_limit(3.0, sorted(durations)[1])
+        self.assertLess(sorted(durations)[1], limit, "{} {}".format(detail, durations))
         self.assertEqual(result['fail_on_meaning_risk_count'], 0)
 
     def test_public_function_without_type_changes(self):

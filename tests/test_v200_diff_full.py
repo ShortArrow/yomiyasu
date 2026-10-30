@@ -25,8 +25,10 @@ DIFF = SCRIPTS / "yomiyasu_diff.py"
 CORPUS = ROOT / "tests" / "corpus"
 FIXTURE = ROOT / "tests" / "fixtures" / "diff_v112_existing_keys.json"
 sys.path.insert(0, str(SCRIPTS))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import yomiyasu_diff  # noqa: E402
+from portable import run_text  # noqa: E402
 
 
 NINE_KEYS = ["markers", "new_words", "lost_words", "structure", "spans", "logic", "bold", "endings", "type_changes"]
@@ -34,10 +36,14 @@ NINE_KEYS = ["markers", "new_words", "lost_words", "structure", "spans", "logic"
 # G7（種類と読者の設計 9.4、10.1）: not_judged の次に context を足す（キーを足すだけで、形式2のまま）
 # diff の詰め（追加文書 2.4、勢いの文書 3.3）: 文体の硬化の検査（stiffness）と勢いの検査（tone）を full_diff のあとに足す
 # diff の詰めの直し（反証で見つけた例）: 気持ちの語の一覧の出どころ（feeling）を最後に足す
+# 2.5.0: 見出しの形の変化（heading_shapes）と、読点が増えた候補（comma_increase）を最後に足す
 TOP_KEYS = (["format", "format_version", "tool_version", "status", "changed", "candidate_count", "meaning_risk_count",
              "fail_on_meaning_risk_count", "not_judged", "context", "meaning_risks"] + NINE_KEYS
-            + ["full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness", "register"])
+            + ["full_diff", "stiffness", "tone", "feeling", "hedges", "immutable", "politeness", "register", "added_actors",
+               "heading_shapes", "comma_increase"])
 FIRST_LINE = "差分の検査を実行しました。"
+# v2.1.1: v1.1.2 の合成20組のうち、見出しを変えた組で structure の後ろに足す見出しの変化の文
+HEADING_ADDED = {"heading_and_code": ["見出しのレベルを変えた（元1行目 レベル2「## 手順」→ 後1行目 レベル3「### 手順」）"]}
 DISCLAIMER = ("全文差分は変わった箇所を示すだけで、意味が同じだという証明ではありません。"
               "この検査では、意味の保持と読者にとっての分かりやすさは判定していません。")
 NO_CANDIDATE_STATUS = "状態: 変更はあるが、専用の規則に当たる見直し候補はない（変更"
@@ -98,7 +104,7 @@ EXAMPLE_C = """差分の検査を実行しました。
 - 数値が変わった（元5行目 → 後3行目）: 3日 → 30日
   元: 保存期間は3日です。
   後: 保存期間は30日です。
-- 文の種類の印が変わった: 2件（下の「■ 文の種類の印が変わった文」を見る）
+- 文の種類を表す語が変わった: 2件（下の「■ 文の種類を表す語が変わった文」を見る）
 
 ■ 規則の見直し候補（15件）
 ■ 言い回しの種類の増減（意味が変わりやすいところ）
@@ -115,14 +121,14 @@ EXAMPLE_C = """差分の検査を実行しました。
 - 文頭のつなぎ: しかし、「キャッシュ」も確認するべきです。
 ■ 文末の種類が変わった文（立場に合う向きか見る）
 - 動作（〜します）・箇条書き → 勧め: 設定ファイルを開き、値を変更しましょう。
-■ 文の種類の印が変わった文（伝聞・推量・意見・例え・依頼が、元の文と同じか見る）
+■ 文の種類を表す語が変わった文（伝聞・推量・意見・例え・依頼が、元の文と同じか見る）
 - 元: 値を変更してください。
   後: 設定ファイルを開き、値を変更しましょう。
-  消えた印: 依頼・決まり（てください）
+  消えた語: 依頼・決まり（てください）
 - 元: 原因は設定ミスだとされる。これは重要です。
   後: 原因は設定ミスだ。しかし、「キャッシュ」も確認するべきです。
-  消えた印: 伝聞（とされる）
-  増えた印: 依頼・決まり（べき）
+  消えた語: 伝聞（とされる）
+  増えた語: 依頼・決まり（べき）
 ■ 文末の立場が混ざっている候補（立場を決めてから見る）
 - 敬体の文の中に、常体の文がある。そろえるときは「する → します」と形だけで変えず、立場に合う形にする
   ・原因は設定ミスだ。
@@ -263,9 +269,10 @@ def split_lines(text):
 
 
 def run_diff(args, stdin=None, env=None):
-    """標準入力を渡さないときは空にする（親の標準入力を受け継ぐと、誤って読む実装が端末でだけ timeout まで止まる）。"""
+    """標準入力を渡さないときは空にする（親の標準入力を受け継ぐと、誤って読む実装が端末でだけ timeout まで止まる）。
+    渡す文字列は、改行を変えずに UTF-8 のバイト列で渡す（portable.run_text）。"""
     feed = {"stdin": subprocess.DEVNULL} if stdin is None else {"input": stdin}
-    return subprocess.run(
+    return run_text(
         [sys.executable, "-B", str(DIFF)] + [str(a) for a in args],
         encoding="utf-8", capture_output=True, timeout=30, env=env, **feed
     )
@@ -761,11 +768,13 @@ class TestPresentation(DiffCase):
     def test_report_parts_make_the_report(self):
         """2.10: report() は report_parts() の節（risks、rules、full_diff）を並べたもの。ない節は空の文字列。
         check は節ごとに使い、照合の unsupported も同じ形の行にする（3.5 の例3）。
-        diff の詰めで、文体の硬化の検査と勢いの検査の節（stiffness、tone）を rules と full_diff の間に足した（候補がなければ空）。"""
+        diff の詰めで、文体の硬化の検査と勢いの検査の節（stiffness、tone）を rules と full_diff の間に足した（候補がなければ空）。
+        2.5.0 で、見出しの形と読点の増加の節（heading_shapes、comma_increase）を足した（候補がなければ空）。"""
         report_parts = self.need_function("report_parts")
         result = self.diff2(C_OLD, C_NEW)
         parts = report_parts(result)
-        self.assertEqual(sorted(parts), ["full_diff", "hedges", "immutable", "politeness", "register", "risks", "rules", "stiffness", "tone"])
+        self.assertEqual(sorted(parts), ["added_actors", "comma_increase", "full_diff", "heading_shapes", "hedges", "immutable",
+                                         "politeness", "register", "risks", "rules", "stiffness", "tone"])
         status = self.report(result).split("\n")[1]
         body = [part for part in (parts["risks"], parts["rules"], parts["stiffness"], parts["tone"], parts["full_diff"])
                 if part]
@@ -775,6 +784,7 @@ class TestPresentation(DiffCase):
         self.assertTrue(parts["full_diff"].startswith("■ 全文差分（変更 2か所。省略していません）"), parts["full_diff"])
         same = report_parts(self.diff2(A_OLD, A_OLD))
         self.assertEqual(same, {"risks": "", "rules": "", "stiffness": "", "tone": "", "hedges": "", "immutable": "", "politeness": "", "register": "",
+                                "added_actors": "", "heading_shapes": "", "comma_increase": "",
                                 "full_diff": "■ 全文差分: 変わった箇所はありません。"})
         unsupported = {"kind": "unsupported", "subkind": "number", "old_line": None, "new_line": 4, "old": None,
                        "new": "再試行は最大3回です。", "detail": {"text": "3回", "value": "3", "unit": "回"}, "basis": None}
@@ -948,7 +958,7 @@ class TestBlockKinds(DiffCase):
         [hunk] = result["full_diff"]["hunks"]
         self.assertEqual((hunk["old_blocks"], hunk["new_blocks"]), (["heading"], ["heading"]))
         self.assertEqual(hunk["notes"], [{"kind": "heading_level", "old": 2, "new": 3}], "10.2 D10 の注記の形")
-        self.assertIn("@ 元1行目 → 後1行目（見出し、見出しの段 2 → 3）", full_diff_section(self.report(result)))
+        self.assertIn("@ 元1行目 → 後1行目（見出し、見出しのレベル 2 → 3）", full_diff_section(self.report(result)))
 
 
 class TestLongLine(DiffCase):
@@ -1128,7 +1138,8 @@ class TestExistingKeys(DiffCase):
     """6.3 既存の9キー: v1.1.2 で作った合成20組（BOM なし）の9キーと同じ（v1.1.2 でも通る後戻り防止）。"""
 
     def test_nine_keys_match_v112_fixture(self):
-        """合成20組の9キーが v1.1.2 の fixture と同じ（v1.1.2 でも通る後戻り防止）。"""
+        """合成20組の9キーが v1.1.2 の fixture と同じ（v1.1.2 でも通る後戻り防止）。v2.1.1 で structure の後ろに足した
+        見出しの変化の文は除いて比べ、足した文は HEADING_ADDED と照らす。"""
         data = json.loads(FIXTURE.read_text(encoding="utf-8"))
         self.assertEqual(data["keys"], NINE_KEYS)
         self.assertEqual(len(data["cases"]), 20)
@@ -1138,7 +1149,11 @@ class TestExistingKeys(DiffCase):
                 result = yomiyasu_diff.diff(case["orig"], case["rewrite"], case["stance"])
                 self.assertEqual([key for key in result if key in NINE_KEYS], NINE_KEYS, "9キーの間の順を保つ（2.8）")
                 actual = json.loads(json.dumps({key: result[key] for key in NINE_KEYS}, ensure_ascii=False))
+                # v2.1.1 で structure の後ろに見出しの変化の文を足した。v1.1.2 の文は前にそのまま並び、足した文は見出しの文だけ
+                added = actual["structure"][len(case["expected"]["structure"]):]
+                actual["structure"] = actual["structure"][:len(case["expected"]["structure"])]
                 self.assertEqual(actual, case["expected"])
+                self.assertEqual(added, HEADING_ADDED.get(case["id"], []))
 
 
 class TestArguments(DiffCase):
@@ -1409,9 +1424,11 @@ DIFF_HELP_DESCRIPTION = ("元の文と書き直した文を比べ、変わった
 # diff の詰めの直し（反証で見つけた例）: 否定対比の主張の逆転と気持ちの語も数えないことを足した
 # v2.1.0: 許可の言い方の変化と、事実や仕様を述べる種類で数える2つ（「場合がある」の言い切り、「必ず」などの足し）を足した。
 # 能力の言い方の消えは、どの種類でも数えないことを書いた
-DIFF_HELP_FAIL_ON = ("意味が変わる恐れのうち、数値、否定、主語と目的語の入れ替え、文の種類（問いと平叙、文の種類の印）、引用の印の変化、"
+# v2.1.1: 関連・相関の文に因果の言い方を足した書き換えと、選ぶ範囲（どれか一つ ↔ 全部）が入れ替わった書き換え、数に付いた概数や範囲の印の
+# 消えと足しを数えることを足した
+DIFF_HELP_FAIL_ON = ("意味が変わる恐れのうち、数値、否定、主語と目的語の入れ替え、文の種類（問いと平叙、文の種類を表す語）、引用の書き方の変化、"
                      "確度を強めた書き換え（かもしれない → 見込み、見込み → 予定、と思われる → 断定など）、"
-                     "原文の状態の語（未定、未確認、調査中など）が消えた書き換え、原文にない書き手の約束・保証・再発防止の誓いの足しが"
+                     "原文の状態の語（未定、未確認、調査中など）が消えた書き換え、原文にない書き手の約束・保証・再発防止の誓いを足した書き換えが"
                      "1件でもあれば、終了コード1で終わります。許可の言い方（してよい、してもよい、構わない）が消えたか増えた書き換えも数えます。"
                      "事実や仕様を述べる種類（--doc-type が pr、article、incident、proposal、manual、formal、paper）では、"
                      "「場合がある」「ことがある」を消して言い切った書き換えと、断定に「必ず」「確実に」などを足した書き換えも数えます"
@@ -1419,9 +1436,12 @@ DIFF_HELP_FAIL_ON = ("意味が変わる恐れのうち、数値、否定、主�
                      "コード・URL・引用ブロックなど変えない箇所の変化は、意味が変わる恐れとして出しますが、"
                      "この条件には数えません。否定対比の主張の逆転と、元にない気持ちの語も数えません。確度を弱めた書き換え、"
                      "数えない語だけの確度の変化、予定の言い切り（する予定です → します）、かぎかっこの中の言葉の変化も数えません。"
-                     "推量の印が同じ強さの慎重な言い方に替わっただけの文（かもしれません → 恐れがあります、と思われます → 見込みです）も数えません。"
-                     "原文にない因果のつながりの足しと、書き手の行為と読む印（いたします、今後・改めて、"
-                     "弊社などの主語）のない「〜します」の足し（説明や手順の文かもしれないもの）も数えません。"
+                     "推量の言い方が、同じ強さの別の慎重な言い方に替わっただけの文（かもしれません → 恐れがあります、と思われます → 見込みです）も数えません。"
+                     "原文にない因果のつながりを足した書き換えと、書き手の行為と読む言い方（いたします、今後・改めて、"
+                     "弊社などの主語）のない「〜します」を足した書き換え（説明や手順の文かもしれないもの）も数えません。"
+                     "ただし、関連・相関を述べた原文の文に因果の言い方（因果、原因、引き起こす など）を足した書き換えと、"
+                     "選ぶ範囲が入れ替わった書き換え（または・どちらか → 両方・すべて、またはその逆）、"
+                     "同じ数に付いた概数や範囲を表す語（約、ほど、以上、未満 など）が消えたか増えた書き換えは数えます。"
                      "候補は確かめる場所で、意味が変わったという判定ではありません。"
                      "条件に当たらなくても、意味が同じだという証明にはなりません。")
 UNKNOWN_FAIL_ON = "--fail-on に使えない値です: {}。diff で使えるのは meaning-risk です。"
@@ -1621,7 +1641,7 @@ class TestCliContract(DiffCase):
         partial = self.root / "partial"
         partial.mkdir()
         (partial / "yomiyasu_diff.py").write_bytes(DIFF.read_bytes())
-        (partial / "markdown_visibility.py").write_text(OLD_VISIBILITY_STUB, encoding="utf-8")
+        (partial / "markdown_visibility.py").write_bytes(OLD_VISIBILITY_STUB.encode("utf-8"))
         with self.subTest(case="script"):
             process = subprocess.run(
                 [sys.executable, "-B", str(partial / "yomiyasu_diff.py"), "--fail-on=meaning-risk", str(self.a_old), str(self.a_new)],
@@ -1642,7 +1662,7 @@ class TestCliContract(DiffCase):
             # 同じプロセスで古い版がすでに読まれていても、spec_from_file_location で読んだ diff は隣のファイルを使う
             old = self.root / "old"
             old.mkdir()
-            (old / "markdown_visibility.py").write_text(OLD_VISIBILITY_STUB, encoding="utf-8")
+            (old / "markdown_visibility.py").write_bytes(OLD_VISIBILITY_STUB.encode("utf-8"))
             worker = "import sys\nsys.path.insert(0, sys.argv[2])\nimport markdown_visibility\nsys.argv = sys.argv[:2]\n" + LOAD_DIFF_WORKER
             process = subprocess.run(
                 [sys.executable, "-B", "-c", worker, str(DIFF), str(old)],
@@ -1658,7 +1678,7 @@ class TestCliContract(DiffCase):
             folder.mkdir()
             (folder / "yomiyasu_diff.py").write_bytes(DIFF.read_bytes())
             if content is not None:
-                (folder / "markdown_visibility.py").write_text(content, encoding="utf-8")
+                (folder / "markdown_visibility.py").write_bytes(content.encode("utf-8"))
             with self.subTest(case=case, run="script"):
                 process = subprocess.run(
                     [sys.executable, "-B", str(folder / "yomiyasu_diff.py"), "--fail-on=meaning-risk",
@@ -1686,6 +1706,7 @@ class TestCliContract(DiffCase):
                 process = subprocess.Popen([sys.executable, "-B", str(DIFF)] + [str(a) for a in args],
                                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 process.stdout.close()
+                process.stdout = None
                 _, err = process.communicate(timeout=60)
                 message = err.decode("utf-8")
                 self.assertEqual(process.returncode, 3, message)
@@ -1748,7 +1769,7 @@ class TestCliContract(DiffCase):
         """2.1: main(argv=None) は終了コードを返す（CLI は sys.exit(main()) の形）。"""
         self.assertTrue(callable(getattr(yomiyasu_diff, "main", None)), "main がない")
         self.assertIn("argv", inspect.signature(yomiyasu_diff.main).parameters)
-        self.assertEqual(self.call_main(["--version"]), (0, "yomiyasu_diff.py 2.1.0 (JSON format 2)\n", ""))
+        self.assertEqual(self.call_main(["--version"]), (0, "yomiyasu_diff.py 2.5.0 (JSON format 2)\n", ""))
         self.assertEqual(self.call_main([str(self.a_old), str(self.a_new)]), (0, EXAMPLE_A + "\n", ""))
         self.assertEqual(self.call_main(["--fail-on=meaning-risk", str(self.a_old), str(self.a_new)]),
                          (1, EXAMPLE_A + "\n\n" + FAIL_LINE_A + "\n", ""))

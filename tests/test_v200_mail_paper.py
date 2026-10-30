@@ -63,7 +63,8 @@ class SpecExamples(unittest.TestCase):
 
 class DocTypes(unittest.TestCase):
     def test_types_and_mirrors(self):
-        self.assertEqual(len(visibility.DOC_TYPES), 12)
+        # 2.2.0 で script（台詞・脚本）を足して13
+        self.assertEqual(len(visibility.DOC_TYPES), 13)
         self.assertEqual(visibility.normalize_doc_type(' ＭＡＩＬ '), 'mail')
         for name in ('markdown_visibility.py', 'yomiyasu_lint.py', 'yomiyasu_diff.py', 'yomiyasu_check.py'):
             self.assertEqual((ROOT/'scripts'/name).read_bytes(), (ROOT/'skills/yomiyasu/scripts'/name).read_bytes())
@@ -95,8 +96,8 @@ class DocTypes(unittest.TestCase):
     def test_cli_types_and_japanese_help(self):
         with tempfile.TemporaryDirectory() as folder:
             old, new = Path(folder)/'old.md', Path(folder)/'new.md'
-            old.write_text('確認します。', encoding='utf-8')
-            new.write_text('確認します。', encoding='utf-8')
+            old.write_bytes('確認します。'.encode('utf-8'))
+            new.write_bytes('確認します。'.encode('utf-8'))
             for kind in ('mail', 'paper'):
                 for main, args in [(lint.main, [new]), (diff.main, [old, new]),
                                    (check.main, ['run', '--source', old, '--final', new, '--no-record'])]:
@@ -176,7 +177,7 @@ class ImmutableValues(unittest.TestCase):
         result = diff.diff('既報 (山田 2020)。', '既報 (佐藤 2020)。')
         self.assertEqual([r['kind'] for r in result['meaning_risks']], ['citation'])
         self.assertEqual(result['fail_on_meaning_risk_count'], 1)
-        self.assertIn('引用の印が変わった', diff.report(result))
+        self.assertIn('引用の書き方が変わった', diff.report(result))
         self.assertTrue(any(r['kind'] == 'citation' for r in diff.meaning_risks('(山田 2020)', '(佐藤 2020)')))
 
     def test_not_citations_and_moved(self):
@@ -287,8 +288,8 @@ class CheckIntegration(unittest.TestCase):
     def test_record_summary_and_replay(self):
         with tempfile.TemporaryDirectory() as folder:
             root=Path(folder); old,new=root/'old.md',root/'new.md'; state=root/'state'
-            old.write_text('田中様\n結果は関連を示唆する。確認いただきます。',encoding='utf-8')
-            new.write_text('佐藤様\n結果は関連を示す。確認する。',encoding='utf-8')
+            old.write_bytes('田中様\n結果は関連を示唆する。確認いただきます。'.encode('utf-8'))
+            new.write_bytes('佐藤様\n結果は関連を示す。確認する。'.encode('utf-8'))
             code,out,err=call(check.main,['run','--source',old,'--final',new,'--state-dir',state,'--doc-type','mail','--json'])
             self.assertEqual((code,err),(0,''),out)
             data=json.loads(out)
@@ -296,7 +297,7 @@ class CheckIntegration(unittest.TestCase):
                 self.assertIn(key+'_check',data)
             self.assertNotIn('register_check', data)
             records=list(state.rglob('attempt-*.json'))
-            record=next(json.loads(p.read_text()) for p in records if 'checks' in json.loads(p.read_text()))
+            record=next(json.loads(p.read_text(encoding='utf-8')) for p in records if 'checks' in json.loads(p.read_text(encoding='utf-8')))
             self.assertIn('references/lists/hedges.txt', record['tools'])
             summary=next(e['summary'] for e in record['checks'] if e['name']=='diff')
             for key in ('immutable', 'politeness'):
@@ -311,7 +312,7 @@ class CheckIntegration(unittest.TestCase):
             old,new=Path(folder)/'old.md',Path(folder)/'new.md'
             for a,b,expected in [('既報 (山田 2020)。','既報 (佐藤 2020)。',1),
                                  ('関連を示唆する。','関連を示す。',1),('田中様','佐藤さん',0)]:
-                old.write_text(a,encoding='utf-8');new.write_text(b,encoding='utf-8')
+                old.write_bytes(a.encode('utf-8'));new.write_bytes(b.encode('utf-8'))
                 for main,args in [(diff.main,[old,new]),(check.main,['run','--source',old,'--final',new,'--no-record'])]:
                     code,out,err=call(main,args+['--fail-on','meaning-risk'])
                     self.assertEqual(code,expected,out)
