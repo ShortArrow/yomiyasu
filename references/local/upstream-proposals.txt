@@ -1,0 +1,33 @@
+# 上流 nanaism/yomiyasu への提案（3.0.0 時点）
+
+フォーク ShortArrow/yomiyasu の方針では上流の既存ファイルを書き換えないため、ここでは案だけを書きます。
+
+## 1. `_touch` を O_NOFOLLOW で開く（scripts/yomiyasu_check.py:618）
+
+`_touch` は `os.O_CREAT | os.O_WRONLY` で開き、そのあと `_chmod` を呼びます。どちらもシンボリックリンクをたどります。
+状態フォルダの索引の名前にリンクがあると、POSIX ではリンク先のファイルを作って 0o600 に変えます。
+ほかの書き込み（`_mkstemp`、`_place_new_file`）はすでに O_NOFOLLOW を付けているので、そろえる案です。
+
+```python
+def _touch(folder: str, name: str) -> None:
+    """空のファイルを作る（索引。すでにあればそのまま）。"""
+    path = str(Path(folder, name))
+    handle = os.open(path, os.O_CREAT | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0), 0o600)
+    os.close(handle)
+    _chmod(path, 0o600)
+```
+
+- 効果は小さめです。索引の名前は時刻と乱数の run_id を含むので、先回りしてリンクを置くことは事実上できません。
+- テスト案：POSIX で、索引の名前に、作業フォルダの外を指すリンクを先に置く。そのうえで `_touch` を呼び、OSError（ELOOP）になること、リンク先が作られないことを確かめる。
+
+## 2. `yomiyasu_diff.py`（11,548行）を分ける
+
+- 1ファイルに、段落の組み立て、語の増減、慎重表現、値、出力の整形が同居しています。
+- 分け方の案：検出器（「消えた語」「つなぎの増減」など）ごとに、モジュールを1つずつにします。共通の段落の組み立てと出力は、本体に残します。
+- 振る舞いを変えない分割は、今あるテストを1つも書き換えずに通すことを条件にします（tidy first）。
+- 配布は `skills/yomiyasu/scripts/` に写して行い、CI は写しの一致をファイルごとに見ています。そのため、増えたファイルを CI の `for file in scripts/yomiyasu_*.py ...` に足す必要があります。
+
+## 3. テストを版ごとから機能ごとに並べ直す
+
+- tests/ には `test_v200_fix_round4_second.py` のような、版と修正の回で名付けたファイルが112本あります。ある機能のテストを探すには、全ファイルを grep するしかありません。
+- 案：入力パスの守り、状態フォルダ、hook、lint の規則ごと、diff の検出器ごとに並べ直します。移すだけで、中身は変えません。
