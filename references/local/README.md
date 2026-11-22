@@ -17,6 +17,8 @@
 ## 上流を取り込む
 
 1. `gh repo sync ShortArrow/yomiyasu -b main` で、フォークの `main` を上流に追いつかせます。
-2. `git fetch origin` の後、`shortarrow` を `origin/main` の上に rebase します。
+2. `git fetch origin` の後、`shortarrow` で `git merge origin/main` を実行して取り込みます。
+   コミットメッセージの1行目は `merge: nanaism/yomiyasu main (vX.Y.Z) into shortarrow` にします。
 3. `SKILL.md` の段落がぶつかったら、Step 2 の見出しの直前に置き直します。
-4. `git push --force-with-lease origin shortarrow` で上げます。
+   置き場所は `tests/test_fork_local_rules.py` で確かめられます。
+4. `git push origin shortarrow` で上げます。履歴を書き換えないので、force は要りません。
